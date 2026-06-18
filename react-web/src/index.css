@@ -1,0 +1,23 @@
+/* Minimal baseline; listing layout lives in App.css */
+
+/**
+ * ~110% browser zoom at 100% zoom: scales layout, text, and px like native zoom
+ * (supported in Chromium, Safari; Firefox 126+).
+ */
+html {
+  zoom: 1.1;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+#root {
+  max-width: none;
+  margin: 0;
+  text-align: left;
+  border: none;
+  min-height: 100%;
+}

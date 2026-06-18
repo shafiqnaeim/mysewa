@@ -1,0 +1,17 @@
+# Build Spring Boot JAR, then run on JRE 11
+FROM maven:3.9.9-eclipse-temurin-11 AS build
+WORKDIR /build
+COPY pom.xml .
+RUN mvn -q -B dependency:go-offline
+COPY src ./src
+RUN mvn -q -B -DskipTests package
+
+FROM eclipse-temurin:11-jre-alpine
+WORKDIR /app
+RUN addgroup -S mysewa && adduser -S mysewa -G mysewa \
+    && mkdir -p /app/uploads/properties \
+    && chown -R mysewa:mysewa /app
+COPY --from=build /build/target/spring-api-*.jar /app/app.jar
+USER mysewa
+EXPOSE 8090
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
