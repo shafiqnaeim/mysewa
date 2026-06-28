@@ -144,6 +144,34 @@ export async function geocodeMailingAddress(address) {
   return { city, state, postcode }
 }
 
+/** Geocode a Malaysian address to coordinates (Nominatim). */
+export async function geocodeAddressToCoordinates(address) {
+  const query = String(address || '').trim()
+  if (!query) return null
+
+  const searchQ = /malaysia/i.test(query) ? query : `${query}, Malaysia`
+  const params = new URLSearchParams({
+    q: searchQ,
+    format: 'json',
+    limit: '1',
+    countrycodes: 'my',
+  })
+
+  const res = await fetch(`${NOMINATIM_SEARCH}?${params}`, {
+    headers: { Accept: 'application/json' },
+  })
+  if (!res.ok) throw new Error('Address lookup failed')
+
+  const rows = await res.json()
+  const hit = rows?.[0]
+  if (!hit?.lat || !hit?.lon) return null
+
+  const lat = Number(hit.lat)
+  const lng = Number(hit.lon)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
+}
+
 /**
  * Driving route between two points via OSRM (public demo server — for planning only).
  * Returns distance, duration, and GeoJSON LineString geometry (coordinates are [lng, lat]).

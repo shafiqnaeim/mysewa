@@ -221,8 +221,7 @@ public class LandlordApplicationToolsController {
 
         UserAccount student = userAccountRepository.findById(app.getStudentId()).orElse(null);
         ApplicationResponse item = ApplicationResponse.from(app, property, student, icCryptoService);
-        item.depositPaid = true;
-        item.depositAmountSuggested = amount;
+        ApplicationDepositEnricher.apply(item, app, property, true);
         return ResponseEntity.ok(Map.of("item", item));
     }
 
@@ -304,6 +303,9 @@ public class LandlordApplicationToolsController {
             one.put("amount", r.getAmount());
             one.put("channel", r.getPaymentChannel());
             one.put("monthState", state);
+            if (r.getRecordedAt() != null) {
+                one.put("recordedAt", DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(r.getRecordedAt()));
+            }
             rentMonthRecords.add(one);
             if (MONTH_STATE_UNAVAILABLE.equals(state)) {
                 unavailableMonths.add(r.getRentMonth());

@@ -1,18 +1,163 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import DashboardShell from '../components/DashboardShell'
+import AdminLayout from '../components/AdminLayout'
 import { useAdminGuard } from '../hooks/useAdminGuard'
 import { useToast } from '../context/ToastContext'
 import { createUniversity } from '../utils/universitiesApi'
+import AdminDatabase from './dashboard/AdminDatabase'
+
+const PAGE_SIZE = 10
+const FETCH_SIZE = 200
 
 const TABS = [
-  { id: 'users', label: 'Users' },
-  { id: 'properties', label: 'Properties' },
-  { id: 'applications', label: 'Applications' },
-  { id: 'universities', label: 'Universities' },
+  { id: 'users', label: 'Users', apiResource: 'users' },
+  { id: 'properties', label: 'Properties', apiResource: 'properties' },
+  { id: 'applications', label: 'Bookings', apiResource: 'applications' },
+  { id: 'payments', label: 'Payments', apiResource: 'payments' },
+  { id: 'reviews', label: 'Reviews', apiResource: 'reviews' },
+  { id: 'universities', label: 'Universities', apiResource: 'universities' },
 ]
 
-const PROPERTY_STATUSES = ['available', 'rented', 'booked', 'maintenance']
+const PROPERTY_STATUSES = ['available', 'rented', 'booked', 'maintenance', 'pending', 'rejected']
+const BOOKING_STATUSES = ['pending', 'accepted', 'rejected']
+const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'refunded']
+
+const TABLE_META = {
+  users: {
+    canAdd: false,
+    canEdit: false,
+    canDelete: false,
+    columns: [
+      { key: 'id', label: 'ID', sortable: true },
+      { key: 'email', label: 'Email', sortable: true },
+      { key: 'fullName', label: 'Name', sortable: true },
+      { key: 'role', label: 'Role', sortable: true },
+      { key: 'accountStatus', label: 'Account', sortable: true },
+      { key: 'verified', label: 'Verified', sortable: true, render: (r) => (r.verified ? 'Yes' : 'No') },
+    ],
+  },
+  properties: {
+    canAdd: false,
+    canEdit: true,
+    canDelete: true,
+    columns: [
+      { key: 'id', label: 'ID', sortable: true },
+      { key: 'landlordId', label: 'Landlord', sortable: true },
+      { key: 'name', label: 'Name', sortable: true },
+      { key: 'city', label: 'City', sortable: true },
+      { key: 'status', label: 'Status', sortable: true },
+      { key: 'price', label: 'Price', sortable: true },
+    ],
+    editFields: [
+      { key: 'name', label: 'Name', required: true },
+      {
+        key: 'status',
+        label: 'Status',
+        type: 'select',
+        required: true,
+        options: PROPERTY_STATUSES.map((s) => ({ value: s, label: s })),
+      },
+    ],
+  },
+  applications: {
+    canAdd: false,
+    canEdit: true,
+    canDelete: true,
+    columns: [
+      { key: 'id', label: 'ID', sortable: true },
+      { key: 'propertyId', label: 'Property', sortable: true },
+      { key: 'studentId', label: 'Student', sortable: true },
+      { key: 'status', label: 'Status', sortable: true },
+      { key: 'preferredMoveIn', label: 'Move in', sortable: true },
+      { key: 'createdAt', label: 'Created', sortable: true },
+    ],
+    editFields: [
+      {
+        key: 'status',
+        label: 'Status',
+        type: 'select',
+        required: true,
+        options: BOOKING_STATUSES.map((s) => ({ value: s, label: s })),
+      },
+    ],
+  },
+  payments: {
+    canAdd: false,
+    canEdit: true,
+    canDelete: true,
+    columns: [
+      { key: 'id', label: 'ID', sortable: true },
+      { key: 'applicationId', label: 'Booking', sortable: true },
+      { key: 'amount', label: 'Amount', sortable: true },
+      { key: 'type', label: 'Type', sortable: true },
+      { key: 'status', label: 'Status', sortable: true },
+      { key: 'createdAt', label: 'Date', sortable: true },
+    ],
+    editFields: [
+      {
+        key: 'status',
+        label: 'Status',
+        type: 'select',
+        required: true,
+        options: PAYMENT_STATUSES.map((s) => ({ value: s, label: s })),
+      },
+    ],
+  },
+  reviews: {
+    canAdd: true,
+    canEdit: true,
+    canDelete: true,
+    columns: [
+      { key: 'id', label: 'ID', sortable: true },
+      { key: 'propertyId', label: 'Property', sortable: true },
+      { key: 'studentId', label: 'Student', sortable: true },
+      { key: 'rating', label: 'Rating', sortable: true },
+      {
+        key: 'comment',
+        label: 'Comment',
+        sortable: false,
+        render: (r) => (String(r.comment || '').length > 48 ? `${String(r.comment).slice(0, 48)}…` : r.comment || '—'),
+      },
+      { key: 'createdAt', label: 'Created', sortable: true },
+    ],
+    editFields: [
+      { key: 'rating', label: 'Rating (1-5)', type: 'number', required: true },
+      { key: 'comment', label: 'Comment', type: 'textarea', required: true },
+    ],
+    addFields: [
+      { key: 'propertyId', label: 'Property ID', type: 'number', required: true },
+      { key: 'studentId', label: 'Student ID', type: 'number', required: true },
+      { key: 'rating', label: 'Rating (1-5)', type: 'number', required: true },
+      { key: 'comment', label: 'Comment', type: 'textarea', required: true },
+    ],
+  },
+  universities: {
+    canAdd: true,
+    canEdit: true,
+    canDelete: true,
+    columns: [
+      { key: 'id', label: 'ID', sortable: true },
+      { key: 'code', label: 'Code', sortable: true },
+      { key: 'name', label: 'Name', sortable: true },
+      { key: 'active', label: 'Active', sortable: true, render: (r) => (r.active ? 'Yes' : 'No') },
+      { key: 'city', label: 'City', sortable: true },
+    ],
+    editFields: [
+      { key: 'name', label: 'Name', required: true },
+      { key: 'active', label: 'Active', type: 'checkbox' },
+      { key: 'latitude', label: 'Latitude', inputMode: 'decimal' },
+      { key: 'longitude', label: 'Longitude', inputMode: 'decimal' },
+    ],
+    addFields: [
+      { key: 'code', label: 'Code', required: true },
+      { key: 'name', label: 'Name', required: true },
+      { key: 'latitude', label: 'Latitude', inputMode: 'decimal', required: true },
+      { key: 'longitude', label: 'Longitude', inputMode: 'decimal', required: true },
+      { key: 'city', label: 'City' },
+      { key: 'state', label: 'State' },
+      { key: 'postcode', label: 'Postcode' },
+    ],
+  },
+}
 
 async function readJson(res) {
   const raw = await res.text()
@@ -23,108 +168,197 @@ async function readJson(res) {
   }
 }
 
+function escapeCsv(value) {
+  const s = String(value ?? '')
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`
+  }
+  return s
+}
+
+function downloadBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+function compareValues(a, b) {
+  const na = Number(a)
+  const nb = Number(b)
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb
+  return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function buildSearchHaystack(row) {
+  return Object.values(row)
+    .filter((v) => v != null && typeof v !== 'object')
+    .join(' ')
+    .toLowerCase()
+}
+
+function defaultFormForFields(fields, row) {
+  const form = {}
+  fields.forEach((field) => {
+    if (field.type === 'checkbox') {
+      form[field.key] = row ? row[field.key] !== false : true
+    } else {
+      form[field.key] = row?.[field.key] != null ? String(row[field.key]) : ''
+    }
+  })
+  return form
+}
+
 export default function AdminDatabasePage() {
-  const navigate = useNavigate()
-  const { user, loading: authLoading, error: authError, token } = useAdminGuard()
+  const { loading, error, token } = useAdminGuard()
   const { pushToast } = useToast()
 
-  const [resource, setResource] = useState('users')
-  const [page, setPage] = useState(0)
-  const [items, setItems] = useState([])
-  const [totalPages, setTotalPages] = useState(0)
+  const [activeTab, setActiveTab] = useState('users')
+  const [allRows, setAllRows] = useState([])
   const [totalElements, setTotalElements] = useState(0)
   const [rowsLoading, setRowsLoading] = useState(false)
-  const [editRow, setEditRow] = useState(null)
-  const [editForm, setEditForm] = useState({})
-  const [saving, setSaving] = useState(false)
-  const [creatingUni, setCreatingUni] = useState(false)
-  const [uniCreate, setUniCreate] = useState({
-    code: '',
-    name: '',
-    latitude: '',
-    longitude: '',
-    city: '',
-    state: '',
-    postcode: '',
-  })
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState('id')
+  const [sortDir, setSortDir] = useState('desc')
+  const [page, setPage] = useState(0)
 
-  const authHeaders = useMemo(
-    () => ({
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    }),
-    [token],
-  )
+  const [modalMode, setModalMode] = useState(null)
+  const [modalRow, setModalRow] = useState(null)
+  const [modalForm, setModalForm] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  const meta = TABLE_META[activeTab]
+  const apiResource = TABS.find((t) => t.id === activeTab)?.apiResource || activeTab
 
   const loadRows = useCallback(async () => {
     if (!token) return
     setRowsLoading(true)
     try {
-      const res = await fetch(`/api/v1/admin/database/${resource}/rows?page=${page}&size=25`, {
+      const res = await fetch(`/api/v1/admin/database/${apiResource}/rows?page=0&size=${FETCH_SIZE}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await readJson(res)
       if (!res.ok) throw new Error(data.message || `Load failed (${res.status})`)
-      setItems(Array.isArray(data.items) ? data.items : [])
-      setTotalPages(Number(data.totalPages) || 0)
+      setAllRows(Array.isArray(data.items) ? data.items : [])
       setTotalElements(Number(data.totalElements) || 0)
     } catch (e) {
-      setItems([])
+      setAllRows([])
+      setTotalElements(0)
       pushToast({ message: e.message || 'Unable to load rows.', type: 'error' })
     } finally {
       setRowsLoading(false)
     }
-  }, [token, resource, page, pushToast])
+  }, [token, apiResource, pushToast])
 
   useEffect(() => {
-    if (token) loadRows()
+    if (token) void loadRows()
   }, [token, loadRows])
 
   useEffect(() => {
     setPage(0)
-  }, [resource])
+    setSearch('')
+    setSortKey('id')
+    setSortDir('desc')
+    setModalMode(null)
+    setModalRow(null)
+  }, [activeTab])
 
-  function openEdit(row) {
-    setEditRow(row)
-    if (resource === 'applications') {
-      setEditForm({ status: row.status || 'pending' })
-    } else if (resource === 'properties') {
-      setEditForm({ name: row.name || '', status: row.status || 'available' })
-    } else if (resource === 'universities') {
-      setEditForm({
-        name: row.name || '',
-        active: row.active !== false,
-        latitude: row.latitude != null ? String(row.latitude) : '',
-        longitude: row.longitude != null ? String(row.longitude) : '',
-      })
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    let rows = allRows
+    if (q) {
+      rows = rows.filter((row) => buildSearchHaystack(row).includes(q))
+    }
+    const sorted = [...rows].sort((a, b) => {
+      const cmp = compareValues(a[sortKey], b[sortKey])
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return sorted.map((row) => ({
+      ...row,
+      _canEdit: meta.canEdit,
+      _canDelete: meta.canDelete,
+    }))
+  }, [allRows, search, sortKey, sortDir, meta.canEdit, meta.canDelete])
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+
+  const pageRows = useMemo(() => {
+    const start = page * PAGE_SIZE
+    return filteredRows.slice(start, start + PAGE_SIZE)
+  }, [filteredRows, page])
+
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(Math.max(0, totalPages - 1))
+  }, [page, totalPages])
+
+  function handleSort(key) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
     }
   }
 
+  function openAdd() {
+    const fields = meta.addFields || []
+    setModalMode('add')
+    setModalRow(null)
+    setModalForm(defaultFormForFields(fields))
+  }
+
+  function openEdit(row) {
+    const fields = meta.editFields || []
+    setModalMode('edit')
+    setModalRow(row)
+    setModalForm(defaultFormForFields(fields, row))
+  }
+
+  function closeModal() {
+    if (saving) return
+    setModalMode(null)
+    setModalRow(null)
+    setModalForm({})
+  }
+
+  function handleModalChange(key, value) {
+    setModalForm((prev) => ({ ...prev, [key]: value }))
+  }
+
   async function saveEdit() {
-    if (!editRow || !token) return
+    if (!modalRow || !token) return
     setSaving(true)
     try {
       let body = {}
-      if (resource === 'applications') body = { status: editForm.status }
-      if (resource === 'properties') body = { name: editForm.name, status: editForm.status }
-      if (resource === 'universities') {
-        body = { name: editForm.name, active: editForm.active }
-        const lat = Number(editForm.latitude)
-        const lng = Number(editForm.longitude)
+      if (activeTab === 'applications') body = { status: modalForm.status }
+      if (activeTab === 'properties') body = { name: modalForm.name, status: modalForm.status }
+      if (activeTab === 'payments') body = { status: modalForm.status }
+      if (activeTab === 'reviews') body = { rating: Number(modalForm.rating), comment: modalForm.comment }
+      if (activeTab === 'universities') {
+        body = { name: modalForm.name, active: Boolean(modalForm.active) }
+        const lat = Number(modalForm.latitude)
+        const lng = Number(modalForm.longitude)
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
           body.latitude = lat
           body.longitude = lng
         }
       }
-      const res = await fetch(`/api/v1/admin/database/${resource}/${editRow.id}`, {
+
+      const res = await fetch(`/api/v1/admin/database/${apiResource}/${modalRow.id}`, {
         method: 'PATCH',
-        headers: authHeaders,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(body),
       })
       const data = await readJson(res)
       if (!res.ok) throw new Error(data.message || `Save failed (${res.status})`)
       pushToast({ message: 'Row updated.', type: 'success' })
-      setEditRow(null)
+      closeModal()
       loadRows()
     } catch (e) {
       pushToast({ message: e.message || 'Save failed.', type: 'error' })
@@ -133,382 +367,162 @@ export default function AdminDatabasePage() {
     }
   }
 
+  async function saveAdd() {
+    if (!token) return
+    setSaving(true)
+    try {
+      if (activeTab === 'universities') {
+        await createUniversity(token, {
+          code: String(modalForm.code || '').trim().toUpperCase(),
+          name: String(modalForm.name || '').trim(),
+          latitude: Number(modalForm.latitude),
+          longitude: Number(modalForm.longitude),
+          city: String(modalForm.city || '').trim() || null,
+          state: String(modalForm.state || '').trim() || null,
+          postcode: String(modalForm.postcode || '').trim() || null,
+          active: true,
+        })
+      } else if (activeTab === 'reviews') {
+        const res = await fetch(`/api/v1/admin/database/${apiResource}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            propertyId: Number(modalForm.propertyId),
+            studentId: Number(modalForm.studentId),
+            rating: Number(modalForm.rating),
+            comment: String(modalForm.comment || '').trim(),
+          }),
+        })
+        const data = await readJson(res)
+        if (!res.ok) throw new Error(data.message || `Create failed (${res.status})`)
+      } else {
+        throw new Error('Add is not supported for this table.')
+      }
+      pushToast({ message: 'Record created.', type: 'success' })
+      closeModal()
+      loadRows()
+    } catch (e) {
+      pushToast({ message: e.message || 'Create failed.', type: 'error' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   async function deleteRow(row) {
     if (!token) return
-    const ok = window.confirm(`Delete this ${resource.slice(0, -1)} row #${row.id}?`)
-    if (!ok) return
+    const label = TABS.find((t) => t.id === activeTab)?.label || 'row'
+    if (!window.confirm(`Delete this ${label} record #${row.id}?`)) return
     try {
-      const res = await fetch(`/api/v1/admin/database/${resource}/${row.id}`, {
+      const res = await fetch(`/api/v1/admin/database/${apiResource}/${row.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await readJson(res)
       if (!res.ok) throw new Error(data.message || `Delete failed (${res.status})`)
       pushToast({ message: 'Deleted.', type: 'success' })
-      if (editRow?.id === row.id) setEditRow(null)
+      if (modalRow?.id === row.id) closeModal()
       loadRows()
     } catch (e) {
       pushToast({ message: e.message || 'Delete failed.', type: 'error' })
     }
   }
 
-  async function submitUniversityCreate(e) {
-    e.preventDefault()
-    if (!token) return
-    setCreatingUni(true)
-    try {
-      const body = {
-        code: uniCreate.code.trim().toUpperCase(),
-        name: uniCreate.name.trim(),
-        latitude: Number(uniCreate.latitude),
-        longitude: Number(uniCreate.longitude),
-        city: uniCreate.city.trim() || null,
-        state: uniCreate.state.trim() || null,
-        postcode: uniCreate.postcode.trim() || null,
-        active: true,
-      }
-      await createUniversity(token, body)
-      pushToast({ message: 'University created.', type: 'success' })
-      setUniCreate({ code: '', name: '', latitude: '', longitude: '', city: '', state: '', postcode: '' })
-      loadRows()
-    } catch (e) {
-      pushToast({ message: e.message || 'Create failed.', type: 'error' })
-    } finally {
-      setCreatingUni(false)
-    }
+  function exportRows() {
+    return filteredRows.map(({ _canEdit, _canDelete, ...row }) => row)
   }
 
-  function renderTableHead() {
-    if (resource === 'users') {
-      return (
-        <tr>
-          <th>ID</th>
-          <th>Email</th>
-          <th>Name</th>
-          <th>Role</th>
-          <th>Account</th>
-          <th>Actions</th>
-        </tr>
-      )
-    }
-    if (resource === 'properties') {
-      return (
-        <tr>
-          <th>ID</th>
-          <th>Landlord</th>
-          <th>Name</th>
-          <th>City</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      )
-    }
-    if (resource === 'applications') {
-      return (
-        <tr>
-          <th>ID</th>
-          <th>Property</th>
-          <th>Student</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      )
-    }
+  function handleExportCsv() {
+    const rows = exportRows()
+    const keys = meta.columns.map((c) => c.key)
+    const header = meta.columns.map((c) => c.label)
+    const lines = [header.join(',')]
+    rows.forEach((row) => {
+      lines.push(keys.map((k) => escapeCsv(row[k])).join(','))
+    })
+    downloadBlob(lines.join('\n'), `mysewa-${activeTab}-${Date.now()}.csv`, 'text/csv;charset=utf-8')
+    pushToast({ message: 'CSV export downloaded.', type: 'success' })
+  }
+
+  function handleExportJson() {
+    const rows = exportRows()
+    downloadBlob(JSON.stringify(rows, null, 2), `mysewa-${activeTab}-${Date.now()}.json`, 'application/json')
+    pushToast({ message: 'JSON export downloaded.', type: 'success' })
+  }
+
+  const cappedNote =
+    totalElements > FETCH_SIZE ? `Showing up to ${FETCH_SIZE} most recent rows. Use search to narrow results.` : null
+
+  const modalTitle =
+    modalMode === 'add'
+      ? `Add ${TABS.find((t) => t.id === activeTab)?.label || 'record'}`
+      : `Edit row #${modalRow?.id}`
+
+  const modalFields = modalMode === 'add' ? meta.addFields || [] : meta.editFields || []
+
+  if (loading) {
     return (
-      <tr>
-        <th>ID</th>
-        <th>Code</th>
-        <th>Name</th>
-        <th>Active</th>
-        <th>Actions</th>
-      </tr>
+      <AdminLayout>
+        <div className="flex min-h-[40vh] items-center justify-center bg-[#FAFAFA]">
+          <p className="text-sm text-[#6B7280]">Verifying privileges…</p>
+        </div>
+      </AdminLayout>
     )
   }
 
-  function renderCells(row) {
-    if (resource === 'users') {
-      return (
-        <>
-          <td>{row.id}</td>
-          <td title={row.email}>{row.email}</td>
-          <td>{row.fullName || '—'}</td>
-          <td>{row.role}</td>
-          <td>{row.accountStatus}</td>
-          <td>
-            <button type="button" className="admin-db-btn" onClick={() => navigate('/admin')}>
-              Suspend on myDashboard
-            </button>
-          </td>
-        </>
-      )
-    }
-    if (resource === 'properties') {
-      return (
-        <>
-          <td>{row.id}</td>
-          <td>{row.landlordId}</td>
-          <td>{row.name}</td>
-          <td>{row.city || '—'}</td>
-          <td>{row.status}</td>
-          <td className="admin-db-actions">
-            <button type="button" className="admin-db-btn" onClick={() => openEdit(row)}>
-              Edit
-            </button>
-            <button type="button" className="admin-db-btn admin-db-btn--danger" onClick={() => deleteRow(row)}>
-              Delete
-            </button>
-          </td>
-        </>
-      )
-    }
-    if (resource === 'applications') {
-      return (
-        <>
-          <td>{row.id}</td>
-          <td>{row.propertyId}</td>
-          <td>{row.studentId}</td>
-          <td>{row.status}</td>
-          <td className="admin-db-actions">
-            <button type="button" className="admin-db-btn" onClick={() => openEdit(row)}>
-              Edit
-            </button>
-            <button type="button" className="admin-db-btn admin-db-btn--danger" onClick={() => deleteRow(row)}>
-              Delete
-            </button>
-          </td>
-        </>
-      )
-    }
+  if (error) {
     return (
-      <>
-        <td>{row.id}</td>
-        <td>{row.code}</td>
-        <td>{row.name}</td>
-        <td>{row.active ? 'Yes' : 'No'}</td>
-        <td className="admin-db-actions">
-          <button type="button" className="admin-db-btn" onClick={() => openEdit(row)}>
-            Edit
-          </button>
-          <button type="button" className="admin-db-btn admin-db-btn--danger" onClick={() => deleteRow(row)}>
-            Delete
-          </button>
-        </td>
-      </>
+      <AdminLayout>
+        <div className="mx-auto max-w-7xl px-4 py-8">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {error}
+          </div>
+        </div>
+      </AdminLayout>
     )
   }
 
   return (
-    <DashboardShell blend>
-      <div className="admin-database-page student-account-page-with-footer">
-        <header className="admin-database-header">
-          <p className="admin-settings-eyebrow">System tools</p>
-          <h1 className="admin-settings-title">myDatabase</h1>
-          <p className="admin-settings-lead">
-            Browse whitelisted tables with pagination. Updates use validated JSON — not raw SQL. User account status
-            changes stay on myDashboard for safety.
-          </p>
-        </header>
-
-        {authLoading ? <div className="auth-toast">Verifying privileges…</div> : null}
-        {authError ? <div className="auth-toast auth-toast-error">{authError}</div> : null}
-
-        {!authLoading && !authError && user && token ? (
-          <>
-            <div className="admin-db-tabs" role="tablist" aria-label="Database tables">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={resource === t.id}
-                  className={`admin-db-tab${resource === t.id ? ' admin-db-tab--on' : ''}`}
-                  onClick={() => setResource(t.id)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-
-            {resource === 'universities' ? (
-              <form className="admin-db-create-card" onSubmit={submitUniversityCreate}>
-                <h2 className="admin-db-create-title">Quick add university</h2>
-                <p className="admin-db-create-hint">
-                  Same rules as mySettings — code must be unique; latitude and longitude are required. For richer
-                  editing use mySettings.
-                </p>
-                <div className="admin-db-create-grid">
-                  <label>
-                    Code
-                    <input
-                      value={uniCreate.code}
-                      onChange={(e) => setUniCreate((p) => ({ ...p, code: e.target.value }))}
-                      placeholder="UMT"
-                      required
-                    />
-                  </label>
-                  <label>
-                    Name
-                    <input
-                      value={uniCreate.name}
-                      onChange={(e) => setUniCreate((p) => ({ ...p, name: e.target.value }))}
-                      required
-                    />
-                  </label>
-                  <label>
-                    Latitude
-                    <input
-                      value={uniCreate.latitude}
-                      onChange={(e) => setUniCreate((p) => ({ ...p, latitude: e.target.value }))}
-                      inputMode="decimal"
-                      required
-                    />
-                  </label>
-                  <label>
-                    Longitude
-                    <input
-                      value={uniCreate.longitude}
-                      onChange={(e) => setUniCreate((p) => ({ ...p, longitude: e.target.value }))}
-                      inputMode="decimal"
-                      required
-                    />
-                  </label>
-                  <label>
-                    City
-                    <input value={uniCreate.city} onChange={(e) => setUniCreate((p) => ({ ...p, city: e.target.value }))} />
-                  </label>
-                  <label>
-                    State
-                    <input value={uniCreate.state} onChange={(e) => setUniCreate((p) => ({ ...p, state: e.target.value }))} />
-                  </label>
-                </div>
-                <button type="submit" className="signin-submit" disabled={creatingUni}>
-                  {creatingUni ? 'Creating…' : 'Create university'}
-                </button>
-              </form>
-            ) : null}
-
-            <div className="admin-db-toolbar">
-              <span className="admin-db-count">
-                {rowsLoading ? 'Loading…' : `${totalElements} rows`}
-                {totalPages > 1 ? ` · page ${page + 1} / ${totalPages}` : ''}
-              </span>
-              <div className="admin-db-pager">
-                <button type="button" className="admin-db-btn" disabled={page <= 0 || rowsLoading} onClick={() => setPage((p) => p - 1)}>
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  className="admin-db-btn"
-                  disabled={rowsLoading || page + 1 >= totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-
-            <div className="admin-db-table-wrap">
-              <table className="admin-db-table">
-                <thead>{renderTableHead()}</thead>
-                <tbody>
-                  {items.length === 0 && !rowsLoading ? (
-                    <tr>
-                      <td colSpan={10} className="admin-db-empty">
-                        No rows.
-                      </td>
-                    </tr>
-                  ) : null}
-                  {items.map((row) => (
-                    <tr key={row.id}>{renderCells(row)}</tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {editRow ? (
-              <div className="admin-db-modal-overlay" role="presentation" onClick={() => !saving && setEditRow(null)}>
-                <div
-                  className="admin-db-modal"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="admin-db-modal-title"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <h2 id="admin-db-modal-title">Edit row #{editRow.id}</h2>
-                  {resource === 'applications' ? (
-                    <label className="admin-db-field">
-                      Status
-                      <select value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
-                        <option value="pending">pending</option>
-                        <option value="accepted">accepted</option>
-                        <option value="rejected">rejected</option>
-                      </select>
-                    </label>
-                  ) : null}
-                  {resource === 'properties' ? (
-                    <>
-                      <label className="admin-db-field">
-                        Name
-                        <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} />
-                      </label>
-                      <label className="admin-db-field">
-                        Status
-                        <select value={editForm.status} onChange={(e) => setEditForm((f) => ({ ...f, status: e.target.value }))}>
-                          {PROPERTY_STATUSES.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </>
-                  ) : null}
-                  {resource === 'universities' ? (
-                    <>
-                      <label className="admin-db-field">
-                        Name
-                        <input value={editForm.name} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} />
-                      </label>
-                      <label className="admin-db-field admin-db-check">
-                        <input
-                          type="checkbox"
-                          checked={!!editForm.active}
-                          onChange={(e) => setEditForm((f) => ({ ...f, active: e.target.checked }))}
-                        />
-                        Active
-                      </label>
-                      <label className="admin-db-field">
-                        Latitude
-                        <input
-                          value={editForm.latitude}
-                          onChange={(e) => setEditForm((f) => ({ ...f, latitude: e.target.value }))}
-                          inputMode="decimal"
-                        />
-                      </label>
-                      <label className="admin-db-field">
-                        Longitude
-                        <input
-                          value={editForm.longitude}
-                          onChange={(e) => setEditForm((f) => ({ ...f, longitude: e.target.value }))}
-                          inputMode="decimal"
-                        />
-                      </label>
-                    </>
-                  ) : null}
-                  <div className="admin-db-modal-actions">
-                    <button type="button" className="signin-submit" disabled={saving} onClick={saveEdit}>
-                      {saving ? 'Saving…' : 'Save'}
-                    </button>
-                    <button type="button" className="admin-db-btn" disabled={saving} onClick={() => setEditRow(null)}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-    </DashboardShell>
+    <AdminLayout>
+      <AdminDatabase
+        tabs={TABS}
+        activeTab={activeTab}
+        columns={meta.columns}
+        rows={pageRows}
+        loading={rowsLoading}
+        search={search}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        page={page}
+        totalPages={totalPages}
+        filteredTotal={filteredRows.length}
+        pageSize={PAGE_SIZE}
+        totalElements={totalElements}
+        cappedNote={cappedNote}
+        canAdd={meta.canAdd}
+        modalMode={modalMode}
+        modalTitle={modalTitle}
+        modalFields={modalFields}
+        modalForm={modalForm}
+        saving={saving}
+        onTabChange={setActiveTab}
+        onSearchChange={(value) => {
+          setSearch(value)
+          setPage(0)
+        }}
+        onSort={handleSort}
+        onPageChange={setPage}
+        onAdd={openAdd}
+        onEdit={openEdit}
+        onDelete={deleteRow}
+        onExportCsv={handleExportCsv}
+        onExportJson={handleExportJson}
+        onModalChange={handleModalChange}
+        onModalSubmit={modalMode === 'add' ? saveAdd : saveEdit}
+        onModalClose={closeModal}
+      />
+    </AdminLayout>
   )
 }

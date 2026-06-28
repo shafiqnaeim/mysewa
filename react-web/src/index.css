@@ -1,4 +1,32 @@
-/* Minimal baseline; listing layout lives in App.css */
+@import 'tailwindcss';
+
+@theme {
+  --color-story-primary: #1a3636;
+  --color-story-accent: #e8a87c;
+  --color-story-bg: #faf7f0;
+  --color-story-blue: #dbeafe;
+  --color-story-green: #d1fae5;
+  --color-ld-primary: #1a4d5e;
+  --color-ld-secondary: #f4a261;
+  --color-ld-accent: #e76f51;
+  --color-ld-bg: #f8f9fa;
+  --font-sans: 'Inter', Arial, Helvetica, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Calistoga', Georgia, 'Times New Roman', serif;
+}
+
+/* Bridge Tailwind story tokens → App.css consumers */
+:root {
+  --bg: #faf7f0;
+  --surface: #ffffff;
+  --surface-soft: #f3efe6;
+  --border: #d4cfc4;
+  --text: #1a3636;
+  --text-muted: #5c6b6b;
+  --brand: #1a3636;
+  --brand-strong: #122828;
+  --accent: #1a3636;
+  --accent-warm: #e8a87c;
+}
 
 /**
  * ~110% browser zoom at 100% zoom: scales layout, text, and px like native zoom
@@ -12,6 +40,11 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
 }
 
 #root {

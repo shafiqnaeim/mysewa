@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { dashboardPathForRole, normalizeRole } from '../auth/dashboardPaths'
 import { ADMIN_NAV_ITEMS } from '../admin/adminNav'
 
@@ -89,12 +89,11 @@ function StudentDrawerIcon({ name }) {
 export default function TopNavBar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams] = useSearchParams()
   const [currentUser, setCurrentUser] = useState(null)
   const [studentDrawerOpen, setStudentDrawerOpen] = useState(false)
   const [studentProfileOpen, setStudentProfileOpen] = useState(false)
   const [studentNotifyOpen, setStudentNotifyOpen] = useState(false)
-  const [studentSearchQuery, setStudentSearchQuery] = useState('')
+  const [landingScrolled, setLandingScrolled] = useState(false)
 
   const drawerRef = useRef(null)
   const profileMenuRef = useRef(null)
@@ -172,13 +171,6 @@ export default function TopNavBar() {
     navigate('/')
   }
 
-  function submitStudentSearch(event) {
-    event.preventDefault()
-    const raw = studentSearchQuery.trim()
-    closeStudentOverlays()
-    navigate(raw === '' ? '/' : `/?q=${encodeURIComponent(raw)}`)
-  }
-
   const pathname = location.pathname
   const pathNorm = (pathname.endsWith('/') && pathname !== '/' ? pathname.slice(0, -1) : pathname) || '/'
   const path = pathNorm
@@ -186,7 +178,8 @@ export default function TopNavBar() {
   const isHome = path === '/'
   const isDashboard = path.startsWith('/dashboard')
   const isAdmin = path === '/admin' || path.startsWith('/admin/')
-  const isProperties = path.startsWith('/my-properties')
+  const isProperties =
+    path.startsWith('/my-properties') || path.startsWith('/dashboard/landlord/properties')
   const role = String(currentUser?.role || '').toLowerCase()
   const dashTarget = currentUser ? dashboardPathForRole(currentUser.role) : '/dashboard'
   const isAccountArea = isDashboard || isAdmin
@@ -204,6 +197,8 @@ export default function TopNavBar() {
     pathNorm === '/' ||
     pathNorm === '/dashboard/landlord' ||
     pathNorm === '/dashboard/landlord/account' ||
+    pathNorm === '/dashboard/landlord/properties' ||
+    pathNorm === '/dashboard/landlord/applications' ||
     pathNorm === '/my-properties' ||
     pathNorm.startsWith('/my-properties/')
 
@@ -233,6 +228,8 @@ export default function TopNavBar() {
     !currentUser &&
     (pathNorm === '/dashboard/landlord' ||
       pathNorm === '/dashboard/landlord/account' ||
+      pathNorm === '/dashboard/landlord/properties' ||
+    pathNorm === '/dashboard/landlord/applications' ||
       pathNorm === '/my-properties' ||
       pathNorm.startsWith('/my-properties/'))
 
@@ -251,12 +248,18 @@ export default function TopNavBar() {
     adminMinimalNav ||
     adminMinimalNavWhileLoading
 
+  const isLandingGuest = isHome && !currentUser && !compactDashNavLayout
+
   useEffect(() => {
-    if (pathNorm !== '/') return
-    const q = searchParams.get('q')
-    if (q !== null) setStudentSearchQuery(q)
-    else setStudentSearchQuery('')
-  }, [pathNorm, searchParams])
+    if (!isLandingGuest) {
+      setLandingScrolled(false)
+      return undefined
+    }
+    const onScroll = () => setLandingScrolled(window.scrollY > 24)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [isLandingGuest])
 
   const [localGreetingName, setLocalGreetingName] = useState('')
   const [studentAvatarUrl, setStudentAvatarUrl] = useState('')
@@ -325,11 +328,23 @@ export default function TopNavBar() {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
   }, [currentUser?.fullName])
 
+  const topbarClass = [
+    'topbar',
+    'topbar--story',
+    isLandingGuest ? 'topbar--landing' : '',
+    isLandingGuest && !landingScrolled ? 'topbar--hero' : '',
+    compactDashNavLayout ? 'topbar-student-dash' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <>
-      <header className={`topbar${compactDashNavLayout ? ' topbar-student-dash' : ''}`}>
+      <header className={topbarClass}>
         <div className="topbar-inner">
-          <div className={`navpill${compactDashNavLayout ? ' navpill-student-dash' : ''}`}>
+          <div
+            className={`navpill${compactDashNavLayout ? ' navpill-student-dash' : ''}${isLandingGuest ? ' navpill-landing' : ''}`}
+          >
             {compactDashNavLayout ? (
               <>
                 <div className="student-dash-nav-left">
@@ -355,45 +370,6 @@ export default function TopNavBar() {
                     MySewa
                   </button>
                 </div>
-
-                <form
-                  className="student-dash-search student-dash-nav-center"
-                  role="search"
-                  onSubmit={submitStudentSearch}
-                  aria-label="Search properties"
-                >
-                  <div className="student-dash-search-inner">
-                    <input
-                      type="search"
-                      className="student-dash-search-input"
-                      placeholder="Search"
-                      value={studentSearchQuery}
-                      onChange={(e) => setStudentSearchQuery(e.target.value)}
-                      autoComplete="off"
-                      aria-label="Search listings"
-                      enterKeyHint="search"
-                    />
-                    <span className="student-dash-search-split" aria-hidden="true" />
-                    <button type="submit" className="student-dash-search-btn" aria-label="Search">
-                      <svg
-                        className="student-dash-search-icon"
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" strokeWidth="2" />
-                        <path
-                          d="M20 20l-4.3-4.3"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                </form>
 
                 <div className="student-dash-nav-right">
                   <div className="student-nav-notify-wrap" ref={notifyMenuRef}>
@@ -470,6 +446,23 @@ export default function TopNavBar() {
                   </div>
                 </div>
               </>
+            ) : isLandingGuest ? (
+              <>
+                <div className="nav-left">
+                  <button type="button" className="logo logo-link" onClick={() => navigate('/')}>
+                    MySewa
+                  </button>
+                </div>
+
+                <div className="nav-right landing-nav-actions">
+                  <button type="button" className="nav-btn nav-btn-ghost" onClick={() => navigate('/signin')}>
+                    Sign In
+                  </button>
+                  <button type="button" className="nav-btn nav-btn-accent" onClick={() => navigate('/signup')}>
+                    List Your Property
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <div className="nav-left">
@@ -506,7 +499,7 @@ export default function TopNavBar() {
                         <button
                           type="button"
                           className={`nav-btn${isProperties ? ' nav-btn-active' : ''}`}
-                          onClick={() => navigate('/my-properties')}
+                          onClick={() => navigate('/dashboard/landlord/properties')}
                         >
                           My Properties
                         </button>
@@ -521,10 +514,10 @@ export default function TopNavBar() {
                     </>
                   ) : (
                     <>
-                      <button type="button" className="nav-btn" onClick={() => navigate('/signin')}>
+                      <button type="button" className="nav-btn nav-btn-ghost" onClick={() => navigate('/signin')}>
                         Sign In
                       </button>
-                      <button type="button" className="nav-btn nav-btn-primary" onClick={() => navigate('/signup')}>
+                      <button type="button" className="nav-btn nav-btn-accent" onClick={() => navigate('/signup')}>
                         Sign Up
                       </button>
                     </>
@@ -617,7 +610,7 @@ export default function TopNavBar() {
                     className="student-drawer-link"
                     onClick={() => {
                       setStudentDrawerOpen(false)
-                      navigate('/my-properties')
+                      navigate('/dashboard/landlord/properties')
                     }}
                   >
                     <span className="student-drawer-link-ico">

@@ -15,7 +15,15 @@ public interface PropertyReviewRepository extends JpaRepository<PropertyReview, 
 
     List<PropertyReview> findByPropertyIdOrderByCreatedAtDesc(Integer propertyId);
 
+    List<PropertyReview> findByPropertyIdInOrderByCreatedAtDesc(Collection<Integer> propertyIds);
+
     Optional<PropertyReview> findByPropertyIdAndStudentId(Integer propertyId, Integer studentId);
+
+    List<PropertyReview> findByStudentIdOrderByCreatedAtDesc(Integer studentId);
+
+    org.springframework.data.domain.Page<PropertyReview> findAllByOrderByCreatedAtDesc(
+            org.springframework.data.domain.Pageable pageable
+    );
 
     @Query("SELECT r.propertyId, AVG(r.rating), COUNT(r) FROM PropertyReview r WHERE r.propertyId IN :ids GROUP BY r.propertyId")
     List<Object[]> aggregateRatingsByPropertyIds(@Param("ids") Collection<Integer> ids);

@@ -15,6 +15,7 @@ public class ReviewItemResponse {
     public String comment;
     public String studentDisplayName;
     public String createdAt;
+    public String propertyName;
 
     public static ReviewItemResponse from(PropertyReview r, UserAccount student) {
         ReviewItemResponse o = new ReviewItemResponse();

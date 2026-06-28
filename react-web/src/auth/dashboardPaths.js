@@ -4,7 +4,7 @@ export function normalizeRole(role) {
 
 export function dashboardPathForRole(role) {
   const r = normalizeRole(role)
-  if (r === 'admin') return '/admin'
+  if (r === 'admin') return '/dashboard/admin'
   if (r === 'landlord') return '/dashboard/landlord'
   return '/dashboard/student'
 }

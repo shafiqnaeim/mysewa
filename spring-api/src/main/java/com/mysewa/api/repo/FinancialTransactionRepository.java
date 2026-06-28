@@ -15,7 +15,11 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
 
     List<FinancialTransaction> findByApplicationIdInAndType(Collection<Integer> applicationIds, String type);
 
+    List<FinancialTransaction> findByApplicationIdOrderByCreatedAtDesc(Integer applicationId);
+
     List<FinancialTransaction> findByStudentIdOrderByCreatedAtDesc(Integer studentId);
+
+    List<FinancialTransaction> findByPropertyIdInOrderByCreatedAtDesc(Collection<Integer> propertyIds);
 
     @Query("SELECT COUNT(t) > 0 FROM FinancialTransaction t WHERE t.applicationId = :applicationId AND t.status = 'completed' AND t.type IN ('deposit_mock','deposit_bank','deposit_qr','deposit_cash','deposit_toyyibpay','deposit_landlord_marked')")
     boolean hasCompletedDeposit(@Param("applicationId") Integer applicationId);
@@ -30,6 +34,8 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
     );
 
     Optional<FinancialTransaction> findByExternalRefAndTypeAndStatus(String externalRef, String type, String status);
+
+    List<FinancialTransaction> findAllByOrderByCreatedAtDesc();
 
     /** Removes all prototype deposit rows for an application (completed + pending ToyyibPay). For local QA only. */
     long deleteByApplicationIdAndTypeIn(Integer applicationId, Collection<String> types);

@@ -1,166 +1,228 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import DashboardShell from '../components/DashboardShell'
-import StudentDepositModal from '../components/StudentDepositModal'
+import { useSearchParams } from 'react-router-dom'
+import StudentLayout from '../components/StudentLayout'
 import { useStudentGuard } from '../hooks/useStudentGuard'
 import { useToast } from '../context/ToastContext'
 import { getUniversityDisplayName } from '../utils/universityDisplayName'
+import { countSavedProperties } from '../utils/savedProperties'
+import { resolveApplicationDeposit } from '../utils/propertyDeposit'
+import { canPayDeposit } from '../utils/applicationDisplayStatus'
+import StudentDashboard from './dashboard/StudentDashboard'
 
-function formatApplicationWhen(iso) {
+function getVerificationState(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return 'pending'
+  const u = s.toUpperCase()
+  if (u.includes('VERIF') && !u.includes('UNVER')) return 'verified'
+  if (u.includes('REJECT') || u.includes('FAIL') || u.includes('INVALID')) return 'rejected'
+  return 'pending'
+}
+
+function formatRelativeTime(iso) {
   if (!iso) return ''
   try {
     const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return String(iso)
-    return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+    if (Number.isNaN(d.getTime())) return ''
+    const diff = Date.now() - d.getTime()
+    const mins = Math.floor(diff / 60000)
+    if (mins < 1) return 'just now'
+    if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+    const hours = Math.floor(mins / 60)
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+    const days = Math.floor(hours / 24)
+    return `${days} day${days === 1 ? '' : 's'} ago`
   } catch {
-    return String(iso)
+    return ''
   }
 }
 
-function formatRmMyr(amount) {
-  if (amount == null || Number.isNaN(Number(amount))) return '—'
-  return `RM ${Number(amount).toFixed(2)}`
+function depositAmount(app) {
+  const n = resolveApplicationDeposit(app)
+  return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-function isLandlordDepositConfigured(app) {
-  if (!app) return false
-  if (app.depositSetByLandlord === true) return true
-  const raw = app.landlordDepositAmount ?? app.landlord_deposit_amount
-  if (raw == null) return false
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0
-}
+function buildActivities(applications, reviewByProperty) {
+  const items = []
 
-const QUICK_ACTIONS = [
-  {
-    id: 'search',
-    title: 'Search listings',
-    hint: 'Browse rentals on Home',
-    path: '/',
-    icon: 'search',
-  },
-  {
-    id: 'property',
-    title: 'myProperty',
-    hint: 'Tenancy, payments & communication',
-    path: '/dashboard/student/property',
-    icon: 'home',
-  },
-  {
-    id: 'account',
-    title: 'myAccount',
-    hint: 'Profile & preferences',
-    path: '/dashboard/student/account',
-    icon: 'user',
-  },
-]
+  for (const app of applications) {
+    const status = String(app.status || '').toLowerCase()
+    const name = app.propertyName || `Property #${app.propertyId}`
+    const updated = app.updatedAt || app.createdAt
 
-function QuickIcon({ name }) {
-  const common = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 }
-  if (name === 'search') {
-    return (
-      <svg {...common} aria-hidden="true">
-        <circle cx="11" cy="11" r="7" />
-        <path d="M20 20l-4.3-4.3" strokeLinecap="round" />
-      </svg>
-    )
+    if (status === 'accepted') {
+      if (!app.depositPaid) {
+        items.push({
+          id: `pay-deposit-${app.id}`,
+          icon: '💳',
+          message: `Your application for "${name}" has been approved! Pay the deposit to confirm.`,
+          time: formatRelativeTime(updated),
+          sortAt: new Date(updated || 0).getTime() + 1,
+        })
+      } else {
+        items.push({
+          id: `accepted-${app.id}`,
+          icon: '✅',
+          message: `Booking confirmed for "${name}"`,
+          time: formatRelativeTime(updated),
+          sortAt: new Date(updated || 0).getTime(),
+        })
+      }
+    }
+
+    if (status === 'accepted' && app.depositPaid) {
+      items.push({
+        id: `deposit-${app.id}`,
+        icon: '💰',
+        message: 'Deposit payment recorded',
+        time: formatRelativeTime(updated),
+        sortAt: new Date(updated || 0).getTime() - 1,
+      })
+    }
+
+    if (status === 'pending') {
+      items.push({
+        id: `pending-${app.id}`,
+        icon: '📋',
+        message: `Application submitted for "${name}"`,
+        time: formatRelativeTime(app.createdAt),
+        sortAt: new Date(app.createdAt || 0).getTime(),
+      })
+    }
+
+    const review = reviewByProperty[app.propertyId]
+    if (review) {
+      items.push({
+        id: `review-${app.propertyId}`,
+        icon: '📝',
+        message: `You left a review for "${name}"`,
+        time: formatRelativeTime(review.createdAt || review.updatedAt),
+        sortAt: new Date(review.createdAt || review.updatedAt || 0).getTime(),
+      })
+    }
   }
-  if (name === 'home') {
-    return (
-      <svg {...common} aria-hidden="true">
-        <path d="M3 10.5L12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1v-9.5z" strokeLinejoin="round" />
-      </svg>
-    )
-  }
-  if (name === 'calendar') {
-    return (
-      <svg {...common} aria-hidden="true">
-        <rect x="3" y="4" width="18" height="18" rx="2" />
-        <path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round" />
-      </svg>
-    )
-  }
-  return (
-    <svg {...common} aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c1.5-4 4-6 8-6s6.5 2 8 6" strokeLinecap="round" />
-    </svg>
-  )
+
+  return items
+    .sort((a, b) => (b.sortAt || 0) - (a.sortAt || 0))
+    .slice(0, 5)
+    .map(({ id, icon, message, time }) => ({ id, icon, message, time }))
 }
 
 export default function StudentMyDashboardPage() {
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { user, loading, error } = useStudentGuard()
   const { pushToast } = useToast()
+
+  const [applications, setApplications] = useState([])
+  const [reviewCount, setReviewCount] = useState(0)
+  const [reviewByProperty, setReviewByProperty] = useState({})
+  const [savedCount, setSavedCount] = useState(0)
+  const [notifications, setNotifications] = useState([])
+
   const universityLabel = user ? getUniversityDisplayName(user.university) : ''
 
-  const [myApplications, setMyApplications] = useState([])
-  const [myApplicationsLoading, setMyApplicationsLoading] = useState(false)
-  const [depositModalApp, setDepositModalApp] = useState(null)
-  const [agreementAppId, setAgreementAppId] = useState(null)
-  const [depositResetAllowed, setDepositResetAllowed] = useState(false)
-  const [depositResetSavingId, setDepositResetSavingId] = useState(null)
-
-  useEffect(() => {
-    let cancelled = false
-    async function loadPaymentFlags() {
-      try {
-        const res = await fetch('/api/v1/payments/toyyibpay/options')
-        const data = await res.json().catch(() => ({}))
-        if (!cancelled && res.ok) setDepositResetAllowed(Boolean(data.depositResetAllowed))
-      } catch {
-        if (!cancelled) setDepositResetAllowed(false)
-      }
-    }
-    loadPaymentFlags()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!user?.id) return
-    const token = localStorage.getItem('mysewa_token')
-    if (!token) return
-    let cancelled = false
-    async function load() {
-      setMyApplicationsLoading(true)
-      try {
-        const res = await fetch('/api/v1/applications/for-student', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok) throw new Error(data.message || `Failed to load applications (HTTP ${res.status})`)
-        if (!cancelled) setMyApplications(Array.isArray(data.items) ? data.items : [])
-      } catch (e) {
-        if (!cancelled) {
-          setMyApplications([])
-          pushToast({ message: e.message || 'Unable to load your applications.', type: 'error' })
-        }
-      } finally {
-        if (!cancelled) setMyApplicationsLoading(false)
-      }
-    }
-    load()
-    return () => {
-      cancelled = true
-    }
-  }, [user?.id, pushToast])
+  const firstName = useMemo(() => {
+    const parts = String(user?.fullName || '').trim().split(/\s+/).filter(Boolean)
+    return parts[0] || 'there'
+  }, [user?.fullName])
 
   const reloadApplications = useCallback(async () => {
     const token = localStorage.getItem('mysewa_token')
-    if (!token || !user?.id) return
+    if (!token || !user?.id) return []
     try {
       const res = await fetch('/api/v1/applications/for-student', {
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await res.json().catch(() => ({}))
-      if (res.ok) setMyApplications(Array.isArray(data.items) ? data.items : [])
-    } catch {
-      /* ignore */
+      if (!res.ok) throw new Error(data.message || `Failed to load applications (HTTP ${res.status})`)
+      const items = Array.isArray(data.items) ? data.items : []
+      setApplications(items)
+      return items
+    } catch (e) {
+      setApplications([])
+      pushToast({ message: e.message || 'Unable to load your applications.', type: 'error' })
+      return []
     }
+  }, [user?.id, pushToast])
+
+  useEffect(() => {
+    if (!user?.id) return
+    reloadApplications()
+    setSavedCount(countSavedProperties(user.id))
+
+    const token = localStorage.getItem('mysewa_token')
+    if (!token) return
+
+    async function loadNotifications() {
+      try {
+        const res = await fetch('/api/v1/notifications/user', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) return
+        setNotifications(Array.isArray(data.items) ? data.items : [])
+      } catch {
+        setNotifications([])
+      }
+    }
+
+    loadNotifications()
+  }, [user?.id, reloadApplications])
+
+  useEffect(() => {
+    if (!user?.id) return
+    function refreshSaved() {
+      setSavedCount(countSavedProperties(user.id))
+    }
+    window.addEventListener('mysewa-saved-properties-changed', refreshSaved)
+    return () => window.removeEventListener('mysewa-saved-properties-changed', refreshSaved)
   }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id || applications.length === 0) {
+      setReviewCount(0)
+      setReviewByProperty({})
+      return
+    }
+
+    const token = localStorage.getItem('mysewa_token')
+    if (!token) return
+
+    const propertyIds = [...new Set(applications.map((a) => a.propertyId).filter(Boolean))]
+    let cancelled = false
+
+    async function loadReviews() {
+      const byProperty = {}
+      let count = 0
+
+      await Promise.all(
+        propertyIds.map(async (propertyId) => {
+          try {
+            const res = await fetch(`/api/v1/reviews/for-property/${encodeURIComponent(propertyId)}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) return
+            if (data.myReview) {
+              byProperty[propertyId] = data.myReview
+              count += 1
+            }
+          } catch {
+            /* ignore */
+          }
+        }),
+      )
+
+      if (!cancelled) {
+        setReviewByProperty(byProperty)
+        setReviewCount(count)
+      }
+    }
+
+    loadReviews()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, applications])
 
   useEffect(() => {
     if (searchParams.get('deposit') !== 'return') return
@@ -172,368 +234,65 @@ export default function StudentMyDashboardPage() {
     reloadApplications()
   }, [searchParams, setSearchParams, pushToast, reloadApplications])
 
-  const firstName = useMemo(() => {
-    const parts = String(user?.fullName || '').trim().split(/\s+/).filter(Boolean)
-    return parts[0] || 'there'
-  }, [user?.fullName])
+  const stats = useMemo(() => {
+    const accepted = applications.filter((a) => String(a.status || '').toLowerCase() === 'accepted')
+    const unpaid = accepted.filter((a) => canPayDeposit(a))
+    const pendingAmount = unpaid.reduce((sum, a) => sum + depositAmount(a), 0)
 
-  function mergeApplicationRow(updated) {
-    if (!updated?.id) return
-    setMyApplications((prev) =>
-      prev.map((row) => {
-        if (Number(row.id) !== Number(updated.id)) return row
-        const merged = { ...row, ...updated }
-        if (updated.depositPaid !== undefined) merged.depositPaid = updated.depositPaid
-        else merged.depositPaid = true
-        return merged
-      }),
+    return {
+      activeBookings: accepted.length,
+      savedCount,
+      pendingPaymentsCount: unpaid.length,
+      pendingPaymentsAmount: pendingAmount,
+      totalReviews: reviewCount,
+    }
+  }, [applications, savedCount, reviewCount])
+
+  const activities = useMemo(
+    () => buildActivities(applications, reviewByProperty),
+    [applications, reviewByProperty],
+  )
+
+  const verificationState = useMemo(
+    () => getVerificationState(user?.documentVerificationStatus),
+    [user?.documentVerificationStatus],
+  )
+
+  if (loading) {
+    return (
+      <StudentLayout>
+        <div className="flex min-h-[40vh] items-center justify-center bg-[#FAFAFA]">
+          <p className="text-sm font-medium text-[#6B7280]">Loading your dashboard…</p>
+        </div>
+      </StudentLayout>
     )
   }
 
-  async function resetDepositForTesting(app) {
-    const token = localStorage.getItem('mysewa_token')
-    if (!token || !app?.id) return
-    setDepositResetSavingId(app.id)
-    try {
-      const res = await fetch(`/api/v1/applications/${app.id}/deposit/reset-for-testing`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.message || `Could not clear deposit (${res.status})`)
-      if (data.item) mergeApplicationRow(data.item)
-      pushToast({ message: 'Deposit records cleared — you can use Pay deposit again (local test only).', type: 'success' })
-    } catch (e) {
-      pushToast({ message: e.message || 'Clear deposit failed.', type: 'error' })
-    } finally {
-      setDepositResetSavingId(null)
-    }
-  }
-
-  async function openRentalAgreement(applicationId) {
-    const token = localStorage.getItem('mysewa_token')
-    if (!token) {
-      pushToast({ message: 'Sign in again to continue.', type: 'error' })
-      return
-    }
-    setAgreementAppId(applicationId)
-    try {
-      const res = await fetch(`/api/v1/applications/${applicationId}/agreement`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        let msg = `Could not load agreement (${res.status})`
-        try {
-          const data = text && text.trim().startsWith('{') ? JSON.parse(text) : null
-          if (data?.message) msg = data.message
-        } catch {
-          /* ignore */
-        }
-        throw new Error(msg)
-      }
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      window.open(url, '_blank', 'noopener,noreferrer')
-      window.setTimeout(() => URL.revokeObjectURL(url), 120000)
-    } catch (e) {
-      pushToast({ message: e.message || 'Agreement could not be opened.', type: 'error' })
-    } finally {
-      setAgreementAppId(null)
-    }
+  if (error) {
+    return (
+      <StudentLayout>
+        <div className="mx-auto max-w-7xl px-4 py-8">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            Error: {error}
+          </div>
+        </div>
+      </StudentLayout>
+    )
   }
 
   return (
-    <DashboardShell properties>
-      {depositModalApp ? (
-        <StudentDepositModal
-          application={depositModalApp}
-          onClose={() => setDepositModalApp(null)}
-          onCompleted={(item) => mergeApplicationRow(item)}
-        />
-      ) : null}
-      <article className="dashboard-page-intro student-my-dashboard student-dash-home student-dash-v2">
-        {loading ? <div className="auth-toast">Loading your account…</div> : null}
-        {!loading && error ? <div className="auth-toast auth-toast-error">Error: {error}</div> : null}
-        {!loading && !error && user ? (
-          <>
-            <header className="student-dash-hero">
-              <div className="student-dash-hero-copy">
-                <p className="student-dash-hero-eyebrow">myDashboard</p>
-                <h1 className="student-dash-hero-title">Hi, {firstName}</h1>
-                <p className="student-dash-hero-lead">
-                  Welcome back — explore listings, manage your tenancy tools, and keep your profile ready for
-                  landlords.
-                </p>
-                <div className="student-dash-hero-actions">
-                  <button
-                    type="button"
-                    className="student-dash-hero-btn student-dash-hero-btn--primary"
-                    onClick={() => navigate('/')}
-                  >
-                    Browse listings
-                  </button>
-                  <button
-                    type="button"
-                    className="student-dash-hero-btn student-dash-hero-btn--ghost"
-                    onClick={() => navigate('/dashboard/student/account')}
-                  >
-                    View profile
-                  </button>
-                </div>
-              </div>
-              <div className="student-dash-hero-art" aria-hidden="true">
-                <span className="student-dash-hero-blob student-dash-hero-blob--a" />
-                <span className="student-dash-hero-blob student-dash-hero-blob--b" />
-                <span className="student-dash-hero-blob student-dash-hero-blob--c" />
-              </div>
-            </header>
-
-            <div className="student-dash-v2-layout">
-              <div className="student-dash-v2-main">
-                <section className="student-dash-v2-section" aria-labelledby="student-dash-quick-heading">
-                  <div className="student-dash-v2-section-head">
-                    <h2 id="student-dash-quick-heading" className="student-dash-v2-section-title">
-                      Quick access
-                    </h2>
-                    <button type="button" className="student-dash-v2-section-link" onClick={() => navigate('/')}>
-                      View all
-                    </button>
-                  </div>
-                  <p className="student-dash-v2-section-lead">Shortcuts to the main student areas of MySewa.</p>
-                  <div className="student-dash-quick-actions-grid student-dash-v2-actions">
-                    {QUICK_ACTIONS.map((a) => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        className="student-dash-action-card student-dash-action-card--v2"
-                        onClick={() => navigate(a.path)}
-                      >
-                        <span className="student-dash-action-icon student-dash-action-icon--v2">
-                          <QuickIcon name={a.icon} />
-                        </span>
-                        <span className="student-dash-action-title">{a.title}</span>
-                        <span className="student-dash-action-hint">{a.hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section
-                  className="student-dash-v2-section student-my-applications-section"
-                  aria-labelledby="student-my-apps-heading"
-                >
-                  <div className="student-dash-v2-section-head">
-                    <h2 id="student-my-apps-heading" className="student-dash-v2-section-title">
-                      My rental applications
-                    </h2>
-                    <button type="button" className="student-dash-v2-section-link" onClick={() => navigate('/')}>
-                      Browse listings
-                    </button>
-                  </div>
-                  <p className="student-my-applications-lead">
-                    When a landlord <strong>accepts</strong> you, they set the <strong>deposit amount</strong> below. That
-                    amount is <strong>not sent as cash automatically</strong> — it appears here so you can use{' '}
-                    <strong>Pay deposit</strong> (bank / QR / cash / ToyyibPay prototype). For testing your own listing,
-                    sign in as landlord on <strong>My properties</strong> to accept the application first.
-                  </p>
-                  {myApplicationsLoading ? <p className="auth-toast">Loading applications…</p> : null}
-                  {!myApplicationsLoading && myApplications.length === 0 ? (
-                    <div className="student-dash-card student-rental-empty">
-                      <p>You have not submitted any rental applications yet.</p>
-                      <p className="student-dash-muted">Apply from a property card on the Home page.</p>
-                    </div>
-                  ) : null}
-                  {!myApplicationsLoading && myApplications.length > 0 ? (
-                    <div className="landlord-application-list">
-                      {myApplications.map((a) => {
-                        const accepted = String(a.status || '').toLowerCase() === 'accepted'
-                        const pending = String(a.status || '').toLowerCase() === 'pending'
-                        const rejected = String(a.status || '').toLowerCase() === 'rejected'
-                        return (
-                          <article key={a.id} className="landlord-application-card student-rental-app-card">
-                            <div className="landlord-application-card-top">
-                              <div>
-                                <p className="landlord-application-prop">{a.propertyName || `Property #${a.propertyId}`}</p>
-                                <p className="landlord-application-meta">{formatApplicationWhen(a.createdAt)}</p>
-                              </div>
-                              <span className="landlord-application-status">{a.status || 'pending'}</span>
-                            </div>
-                            <dl className="landlord-application-grid">
-                              <div>
-                                <dt>Application</dt>
-                                <dd>#{a.id}</dd>
-                              </div>
-                              <div>
-                                <dt>Last updated</dt>
-                                <dd>{a.updatedAt ? formatApplicationWhen(a.updatedAt) : '—'}</dd>
-                              </div>
-                              <div>
-                                <dt>Preferred move-in</dt>
-                                <dd>{a.preferredMoveIn || '—'}</dd>
-                              </div>
-                              <div>
-                                <dt>Lease ends</dt>
-                                <dd>{a.leaseEnd || a.leaseEndDate || a.lease_end || '—'}</dd>
-                              </div>
-                              <div>
-                                <dt>Lease length</dt>
-                                <dd>
-                                  {a.leaseDays != null && a.leaseMonths != null
-                                    ? `${a.leaseDays} day${a.leaseDays === 1 ? '' : 's'} / ${a.leaseMonths} month${
-                                        a.leaseMonths === 1 ? '' : 's'
-                                      }`
-                                    : a.leaseMonths != null
-                                      ? `${a.leaseMonths} months`
-                                      : '—'}
-                                </dd>
-                              </div>
-                              {accepted ? (
-                                <div>
-                                  <dt>Deposit to pay</dt>
-                                  <dd>
-                                    <span className="student-app-deposit-amount">
-                                      {formatRmMyr(
-                                        a.depositAmountSuggested != null
-                                          ? a.depositAmountSuggested
-                                          : a.landlordDepositAmount ?? a.landlord_deposit_amount,
-                                      )}
-                                    </span>
-                                    {isLandlordDepositConfigured(a) ? (
-                                      <span className="student-app-deposit-source">
-                                        Your landlord set this amount when they accepted your application.
-                                      </span>
-                                    ) : (
-                                      <span className="student-app-deposit-source">
-                                        Default estimate — no landlord-set deposit is stored yet. Have your landlord
-                                        accept again from <strong>My properties</strong> and enter the deposit amount.
-                                      </span>
-                                    )}
-                                  </dd>
-                                </div>
-                              ) : (
-                                <div>
-                                  <dt>Deposit</dt>
-                                  <dd className="student-app-deposit-pending-note">
-                                    {pending
-                                      ? 'You will see the landlord’s deposit amount here after they accept your application.'
-                                      : rejected
-                                        ? 'Not applicable — this application was not accepted.'
-                                        : '—'}
-                                  </dd>
-                                </div>
-                              )}
-                            </dl>
-                            {accepted ? (
-                              <div className="landlord-application-actions">
-                                {!a.depositPaid ? (
-                                  <button
-                                    type="button"
-                                    className="landlord-application-status-btn"
-                                    onClick={() => setDepositModalApp(a)}
-                                  >
-                                    Pay deposit
-                                  </button>
-                                ) : (
-                                  <>
-                                    <span className="student-app-deposit-paid">Demo deposit paid</span>
-                                    {depositResetAllowed ? (
-                                      <button
-                                        type="button"
-                                        className="landlord-application-status-btn landlord-application-status-btn--ghost"
-                                        disabled={depositResetSavingId === a.id}
-                                        onClick={() => resetDepositForTesting(a)}
-                                      >
-                                        {depositResetSavingId === a.id ? 'Clearing…' : 'Clear deposit (test)'}
-                                      </button>
-                                    ) : null}
-                                  </>
-                                )}
-                                <button
-                                  type="button"
-                                  className="landlord-application-status-btn"
-                                  disabled={agreementAppId === a.id}
-                                  onClick={() => openRentalAgreement(a.id)}
-                                >
-                                  {agreementAppId === a.id ? 'Opening…' : 'Download agreement (HTML)'}
-                                </button>
-                              </div>
-                            ) : null}
-                          </article>
-                        )
-                      })}
-                    </div>
-                  ) : null}
-                </section>
-
-                <section className="student-dash-v2-section" aria-labelledby="student-dash-overview-heading">
-                  <div className="student-dash-v2-section-head">
-                    <h2 id="student-dash-overview-heading" className="student-dash-v2-section-title">
-                      Overview
-                    </h2>
-                  </div>
-                  <p className="student-dash-v2-section-lead">Open a hub for more detail — same tools, full pages.</p>
-                  <div className="student-dash-quick-views-grid student-dash-v2-views">
-                    <div className="student-dash-view-card">
-                      <h3 className="student-dash-view-title">Property hub</h3>
-                      <p className="student-dash-view-body">
-                        Current listing, <strong>deposit</strong>, monthly rent calendar, <strong>reviews</strong>, and{' '}
-                        <strong>reports</strong> — open <strong>myProperty</strong>.
-                      </p>
-                      <button
-                        type="button"
-                        className="student-dash-view-link"
-                        onClick={() => navigate('/dashboard/student/property')}
-                      >
-                        Go to myProperty →
-                      </button>
-                    </div>
-                    <div className="student-dash-view-card">
-                      <h3 className="student-dash-view-title">Your profile</h3>
-                      <p className="student-dash-view-body">
-                        Signed in as <strong>{user.email}</strong>. Update your nickname, bio, and local preferences on{' '}
-                        <strong>myAccount</strong>.
-                      </p>
-                      <button type="button" className="student-dash-view-link" onClick={() => navigate('/dashboard/student/account')}>
-                        Edit myAccount →
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <aside className="student-dash-v2-aside" aria-label="Summary">
-                <div className="student-dash-widget">
-                  <h3 className="student-dash-widget-title">Your account</h3>
-                  <dl className="student-dash-widget-dl">
-                    <div className="student-dash-widget-row">
-                      <dt>Email</dt>
-                      <dd title={user.email}>{user.email}</dd>
-                    </div>
-                    <div className="student-dash-widget-row">
-                      <dt>University</dt>
-                      <dd title={universityLabel || undefined}>{universityLabel || '—'}</dd>
-                    </div>
-                    <div className="student-dash-widget-row">
-                      <dt>Role</dt>
-                      <dd>Student</dd>
-                    </div>
-                  </dl>
-                </div>
-                <div className="student-dash-widget student-dash-widget--accent">
-                  <h3 className="student-dash-widget-title">Get the most from MySewa</h3>
-                  <p className="student-dash-widget-body">
-                    A complete profile and verification help landlords respond faster when you enquire.
-                  </p>
-                  <button type="button" className="student-dash-widget-cta" onClick={() => navigate('/dashboard/student/account')}>
-                    Complete profile →
-                  </button>
-                </div>
-              </aside>
-            </div>
-          </>
-        ) : null}
-      </article>
-    </DashboardShell>
+    <StudentLayout>
+      <StudentDashboard
+        firstName={firstName}
+        fullName={user?.fullName || ''}
+        email={user?.email || ''}
+        universityLabel={universityLabel}
+        emailVerified={Boolean(user?.isVerified ?? user?.verified)}
+        verificationState={verificationState}
+        stats={stats}
+        activities={activities}
+        notifications={notifications}
+      />
+    </StudentLayout>
   )
 }

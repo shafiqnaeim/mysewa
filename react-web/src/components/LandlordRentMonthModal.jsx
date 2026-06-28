@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useToast } from '../context/ToastContext'
+import MarkRentPaidConfirmModal from './rent-tracker/MarkRentPaidConfirmModal'
+import MarkRentUnavailableConfirmModal from './rent-tracker/MarkRentUnavailableConfirmModal'
+import { MONTH_FULL } from '../utils/rentTrackerUtils'
 
 function formatRm(amount) {
   if (amount == null || Number.isNaN(Number(amount))) return '—'
@@ -56,6 +59,7 @@ export default function LandlordRentMonthModal({
   year,
   month,
   monthLabel,
+  propertyName,
   defaultAmountHint,
   existingRecord,
   studentPaymentLog,
@@ -73,7 +77,10 @@ export default function LandlordRentMonthModal({
     return ''
   })
   const [saving, setSaving] = useState(null)
+  const [showPaidConfirm, setShowPaidConfirm] = useState(false)
+  const [showUnavailableConfirm, setShowUnavailableConfirm] = useState(false)
   const busy = saving != null
+  const confirmMonthLabel = `${MONTH_FULL[month - 1]} ${year}`
 
   useEffect(() => {
     if (existingRecord?.amount != null && Number.isFinite(Number(existingRecord.amount))) {
@@ -86,6 +93,33 @@ export default function LandlordRentMonthModal({
   }, [existingRecord, defaultAmountHint, year, month])
 
   const title = useMemo(() => `Rent — ${monthLabel}`, [monthLabel])
+
+  const confirmAmount = useMemo(() => {
+    if (existingRecord?.amount != null && Number.isFinite(Number(existingRecord.amount))) {
+      return Number(existingRecord.amount)
+    }
+    if (hasListingRent) return Number(defaultAmountHint)
+    const amt = parseAmountMyr(amountStr)
+    return Number.isFinite(amt) ? amt : null
+  }, [existingRecord, hasListingRent, defaultAmountHint, amountStr])
+
+  function requestMarkPaid() {
+    if (!hasListingRent) {
+      const amt = parseAmountMyr(amountStr)
+      if (!Number.isFinite(amt) || amt < 1) {
+        pushToast({
+          message: 'Enter an amount of at least RM 1.00 (this listing has no monthly rent on file).',
+          type: 'error',
+        })
+        return
+      }
+      if (amt > 999999.99) {
+        pushToast({ message: 'Amount is too large.', type: 'error' })
+        return
+      }
+    }
+    setShowPaidConfirm(true)
+  }
 
   async function markPaid() {
     const token = localStorage.getItem('mysewa_token')
@@ -121,12 +155,17 @@ export default function LandlordRentMonthModal({
       if (!res.ok) throw new Error(data.message || `Could not save (${res.status})`)
       pushToast({ message: `${monthLabel} marked as paid.`, type: 'success' })
       if (typeof onSaved === 'function') onSaved(data)
+      setShowPaidConfirm(false)
       onClose()
     } catch (e) {
       pushToast({ message: e.message || 'Failed to save.', type: 'error' })
     } finally {
       setSaving(null)
     }
+  }
+
+  function requestMarkUnavailable() {
+    setShowUnavailableConfirm(true)
   }
 
   async function markUnavailable() {
@@ -147,8 +186,9 @@ export default function LandlordRentMonthModal({
       )
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || `Could not save (${res.status})`)
-      pushToast({ message: `${monthLabel} marked as unavailable (no rent expected).`, type: 'success' })
+      pushToast({ message: `${confirmMonthLabel} marked as unavailable (no rent expected).`, type: 'success' })
       if (typeof onSaved === 'function') onSaved(data)
+      setShowUnavailableConfirm(false)
       onClose()
     } catch (e) {
       pushToast({ message: e.message || 'Failed to save.', type: 'error' })
@@ -365,7 +405,7 @@ export default function LandlordRentMonthModal({
               type="button"
               className="landlord-application-status-btn landlord-application-status-btn--unavailable"
               disabled={busy}
-              onClick={markUnavailable}
+              onClick={requestMarkUnavailable}
             >
               {saving === 'unavailable' ? 'Saving…' : 'Mark as Unavailable'}
             </button>
@@ -373,13 +413,35 @@ export default function LandlordRentMonthModal({
               type="button"
               className="landlord-application-status-btn landlord-application-status-btn--accept"
               disabled={busy}
-              onClick={markPaid}
+              onClick={requestMarkPaid}
             >
               {saving === 'paid' ? 'Saving…' : 'Mark as Paid'}
             </button>
           </div>
         </div>
       </div>
+
+      {showPaidConfirm ? (
+        <MarkRentPaidConfirmModal
+          monthLabel={confirmMonthLabel}
+          propertyName={propertyName}
+          amount={confirmAmount}
+          busy={saving === 'paid'}
+          onConfirm={markPaid}
+          onCancel={() => setShowPaidConfirm(false)}
+        />
+      ) : null}
+
+      {showUnavailableConfirm ? (
+        <MarkRentUnavailableConfirmModal
+          monthLabel={confirmMonthLabel}
+          propertyName={propertyName}
+          amount={confirmAmount}
+          busy={saving === 'unavailable'}
+          onConfirm={markUnavailable}
+          onCancel={() => setShowUnavailableConfirm(false)}
+        />
+      ) : null}
     </div>
   )
 }

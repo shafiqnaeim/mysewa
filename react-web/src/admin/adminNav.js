@@ -1,31 +1,41 @@
 /** Admin drawer & dashboard quick links (System Administrator only). */
 export const ADMIN_NAV_ITEMS = [
   { id: 'home', label: 'Home', path: '/', icon: 'home' },
-  { id: 'dashboard', label: 'myDashboard', path: '/admin', icon: 'dashboard' },
-  { id: 'database', label: 'myDatabase', path: '/admin/database', icon: 'database' },
-  { id: 'settings', label: 'mySettings', path: '/admin/settings', icon: 'settings' },
+  { id: 'dashboard', label: 'Dashboard', path: '/dashboard/admin', icon: 'dashboard' },
+  { id: 'users', label: 'Users', path: '/dashboard/admin/users', icon: 'users' },
+  { id: 'properties', label: 'Properties', path: '/dashboard/admin/properties', icon: 'property' },
+  { id: 'verification', label: 'Verify Users', path: '/dashboard/admin/verification', icon: 'shield' },
+  { id: 'database', label: 'Database', path: '/dashboard/admin/database', icon: 'database' },
+  { id: 'settings', label: 'Settings', path: '/dashboard/admin/settings', icon: 'settings' },
 ]
 
 export const ADMIN_QUICK_ACTIONS = [
   {
     id: 'settings',
-    title: 'mySettings',
+    title: 'Settings',
     hint: 'Pin campus coordinates for all universities',
-    path: '/admin/settings',
+    path: '/dashboard/admin/settings',
     icon: 'settings',
   },
   {
     id: 'database',
-    title: 'myDatabase',
+    title: 'Database',
     hint: 'Browse and edit whitelisted tables without phpMyAdmin',
-    path: '/admin/database',
+    path: '/dashboard/admin/database',
     icon: 'database',
   },
   {
+    id: 'users',
+    title: 'Users',
+    hint: 'Manage student and landlord accounts',
+    path: '/dashboard/admin/users',
+    icon: 'users',
+  },
+  {
     id: 'dashboard',
-    title: 'myDashboard',
+    title: 'Dashboard',
     hint: 'Administrator overview',
-    path: '/admin',
+    path: '/dashboard/admin',
     icon: 'dashboard',
   },
   {

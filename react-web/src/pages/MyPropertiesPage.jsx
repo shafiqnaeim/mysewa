@@ -12,10 +12,10 @@ import { useLandlordGuard } from '../hooks/useLandlordGuard'
 import DeletePropertyConfirmModal from '../components/DeletePropertyConfirmModal'
 import LandlordPropertyCard from '../components/LandlordPropertyCard'
 import PropertyViewModal from '../components/PropertyViewModal'
-import LandlordMyPropertiesFooter from '../components/LandlordMyPropertiesFooter'
 import LandlordMyReportsSection from '../components/LandlordMyReportsSection'
 import { resolvePropertyLocationByRoad } from '../utils/propertyLocation'
 import { fetchNearbyFacilities } from '../utils/nearbyFacilities'
+import { resolveApplicationDeposit } from '../utils/propertyDeposit'
 
 function formatApplicationWhen(iso) {
   if (!iso) return ''
@@ -572,7 +572,6 @@ export default function MyPropertiesPage() {
         </div>
       ) : null}
 
-      <div className="my-properties-page-with-footer">
       <article className="my-properties-page">
         <header className="my-property-page-header" aria-labelledby="my-property-title">
           <div className="my-property-page-header-main">
@@ -716,7 +715,7 @@ export default function MyPropertiesPage() {
                               kind: 'accept',
                               app: a,
                               step: 1,
-                              depositStr: formatDefaultDeposit(a.depositAmountSuggested),
+                              depositStr: formatDefaultDeposit(resolveApplicationDeposit(a)),
                               ack1: false,
                               ack2: false,
                             })
@@ -1101,9 +1100,6 @@ export default function MyPropertiesPage() {
           </div>
         ) : null}
       </article>
-
-        <LandlordMyPropertiesFooter />
-      </div>
     </DashboardShell>
   )
 }

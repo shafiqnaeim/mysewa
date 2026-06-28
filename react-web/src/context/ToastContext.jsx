@@ -38,7 +38,10 @@ function ToastItem({ toast, onDismiss }) {
   return (
     <div className={`mysewa-toast mysewa-toast--${toast.type}`} role="status">
       <ToastIcon type={toast.type} />
-      <p className="mysewa-toast-message">{toast.message}</p>
+      <div className="mysewa-toast-body">
+        {toast.title ? <p className="mysewa-toast-title">{toast.title}</p> : null}
+        <p className="mysewa-toast-message">{toast.message}</p>
+      </div>
       <button type="button" className="mysewa-toast-close" onClick={onDismiss} aria-label="Dismiss">
         ×
       </button>
@@ -60,12 +63,13 @@ export function ToastProvider({ children }) {
   }, [])
 
   const pushToast = useCallback(
-    ({ message, type = 'success', duration = 5200 }) => {
+    ({ message, title, type = 'success', duration = 5200 }) => {
       const text = String(message || '').trim()
-      if (!text) return null
+      const heading = title != null ? String(title).trim() : ''
+      if (!text && !heading) return null
 
       const id = ++toastId
-      setToasts((list) => [...list, { id, message: text, type }])
+      setToasts((list) => [...list, { id, title: heading || null, message: text, type }])
 
       if (duration > 0) {
         const timer = setTimeout(() => dismiss(id), duration)

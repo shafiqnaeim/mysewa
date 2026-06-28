@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import DashboardShell from '../components/DashboardShell'
+import { useNavigate } from 'react-router-dom'
+import LandlordLayout from '../components/LandlordLayout'
 import { useLandlordGuard } from '../hooks/useLandlordGuard'
 import { useToast } from '../context/ToastContext'
 import {
@@ -8,13 +8,20 @@ import {
   deriveBirthStateFromNric,
   deriveGenderFromNric,
 } from '../utils/malaysianNric'
+import { computeUploadProgress, readVerificationDocs } from '../utils/landlordVerificationStorage'
+import LandlordAccount from './dashboard/LandlordAccount'
 
 const LS_AVATAR = (id) => `mysewa_landlord_avatar_${id}`
-const LS_VERIFY_IC = (id) => `mysewa_landlord_verify_ic_${id}`
-const LS_VERIFY_MATRIC = (id) => `mysewa_landlord_verify_matric_${id}`
-const LS_VERIFY_SELFIE = (id) => `mysewa_landlord_verify_selfie_${id}`
+const LS_PREFS = (id) => `mysewa_landlord_prefs_${id}`
+const LS_LAST_LOGIN = (id) => `mysewa_landlord_last_login_${id}`
 
 const COUNTRIES = ['Malaysia', 'Singapore', 'Indonesia', 'Brunei', 'Thailand', 'Bangladesh', 'India', 'Other']
+
+const VERIFICATION_STATE_LABEL = {
+  pending: 'Pending',
+  verified: 'Verified',
+  rejected: 'Rejected',
+}
 
 function splitFullName(fullName) {
   const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean)
@@ -34,7 +41,33 @@ function formatDobDdMmYyyy(iso) {
   }
 }
 
-/** Maps API `documentVerificationStatus` to pending | verified | rejected. */
+function formatLoginDisplay(iso) {
+  if (!iso) return ''
+  try {
+    return new Date(iso).toLocaleString('en-MY', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+  } catch {
+    return ''
+  }
+}
+
+function maskIc(ic) {
+  const d = String(ic).replace(/\D/g, '')
+  if (d.length === 12) {
+    return `${d.slice(0, 6)}-${d.slice(6, 8)}-${d.slice(8)}`
+  }
+  const s = String(ic).trim()
+  if (!s) return '—'
+  if (s.length <= 4) return '••••'
+  return `${'•'.repeat(Math.max(0, s.length - 4))}${s.slice(-4)}`
+}
+
 function getVerificationState(raw) {
   const s = String(raw || '').trim()
   if (!s) return 'pending'
@@ -44,75 +77,90 @@ function getVerificationState(raw) {
   return 'pending'
 }
 
-const VERIFICATION_STATE_LABEL = {
-  pending: 'Pending',
-  verified: 'Verified',
-  rejected: 'Rejected',
+function readPrefs(userId) {
+  try {
+    const raw = localStorage.getItem(LS_PREFS(userId))
+    if (!raw) {
+      return { notify: true, twoFactor: false, language: 'en', currency: 'MYR', timezone: 'Asia/Kuala_Lumpur' }
+    }
+    const p = JSON.parse(raw)
+    return {
+      notify: p.notify !== false,
+      twoFactor: Boolean(p.twoFactor),
+      language: p.language || 'en',
+      currency: p.currency || 'MYR',
+      timezone: p.timezone || 'Asia/Kuala_Lumpur',
+    }
+  } catch {
+    return { notify: true, twoFactor: false, language: 'en', currency: 'MYR', timezone: 'Asia/Kuala_Lumpur' }
+  }
 }
 
-function VerificationStateOrb({ state }) {
-  const label = VERIFICATION_STATE_LABEL[state] || 'Pending'
-  return (
-    <div className={`student-account-status-wrap student-account-status-wrap--${state}`}>
-      <div
-        className={`student-account-status-orb student-account-status-orb--${state}`}
-        role="img"
-        aria-label={`Verification status: ${label}`}
-      >
-        {state === 'pending' ? (
-          <svg className="student-account-status-orb-svg" viewBox="0 0 48 48" width="72" height="72" aria-hidden="true">
-            <circle cx="24" cy="24" r="22" fill="#9ca3af" />
-            <rect x="14" y="21.5" width="20" height="5" rx="1.25" fill="#ffffff" />
-          </svg>
-        ) : null}
-        {state === 'verified' ? (
-          <svg className="student-account-status-orb-svg" viewBox="0 0 48 48" width="72" height="72" aria-hidden="true">
-            <circle cx="24" cy="24" r="19.5" fill="none" stroke="#22c55e" strokeWidth="3" />
-            <path
-              fill="none"
-              stroke="#22c55e"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M14.5 24.5l7 7 15-15"
-            />
-          </svg>
-        ) : null}
-        {state === 'rejected' ? (
-          <svg className="student-account-status-orb-svg" viewBox="0 0 48 48" width="72" height="72" aria-hidden="true">
-            <circle cx="24" cy="24" r="22" fill="#ef4444" />
-            <path
-              fill="none"
-              stroke="#ffffff"
-              strokeWidth="3"
-              strokeLinecap="round"
-              d="M17 17l14 14M31 17L17 31"
-            />
-          </svg>
-        ) : null}
-      </div>
-      <p className="student-account-status-caption">{label}</p>
-    </div>
-  )
+function writePrefs(userId, prefs) {
+  try {
+    localStorage.setItem(LS_PREFS(userId), JSON.stringify(prefs))
+  } catch {
+    /* ignore */
+  }
+}
+
+function resetFormFromUser(user, setters) {
+  const split = splitFullName(user.fullName)
+  setters.setFirstName(split.first)
+  setters.setLastName(split.last)
+  setters.setPhone(user.phoneNumber ? String(user.phoneNumber) : '')
+  const digits = String(user.icNumber ?? '').replace(/\D/g, '')
+  if (digits.length === 12) {
+    setters.setCountry('Malaysia')
+  } else {
+    setters.setCountry(user.country && String(user.country).trim() ? String(user.country).trim() : 'Malaysia')
+  }
+}
+
+function computeProfileCompleteness({ user, firstName, lastName, phone, avatarDataUrl, verificationState }) {
+  const checks = [
+    Boolean(firstName.trim() && lastName.trim()),
+    Boolean(user?.email),
+    Boolean(phone.trim()),
+    Boolean(user?.icNumber),
+    Boolean(avatarDataUrl),
+    verificationState === 'verified',
+  ]
+  const done = checks.filter(Boolean).length
+  return Math.round((done / checks.length) * 100)
+}
+
+function getProfileMissingHint({ firstName, lastName, phone, avatarDataUrl, verificationState }) {
+  const missing = []
+  if (!firstName.trim() || !lastName.trim()) missing.push('name')
+  if (!phone.trim()) missing.push('phone number')
+  if (!avatarDataUrl) missing.push('profile photo')
+  if (verificationState !== 'verified') missing.push('identity verification')
+  if (!missing.length) return 'Your profile looks complete.'
+  return `Complete your profile to get more bookings — add your ${missing.join(', ')}.`
 }
 
 export default function LandlordMyAccountPage() {
+  const navigate = useNavigate()
   const { user, loading, error, reloadUser } = useLandlordGuard()
   const { pushToast } = useToast()
+  const avatarInputRef = useRef(null)
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [phone, setPhone] = useState('')
   const [country, setCountry] = useState('Malaysia')
   const [savedFlash, setSavedFlash] = useState(false)
   const [profileSaving, setProfileSaving] = useState(false)
   const [avatarDataUrl, setAvatarDataUrl] = useState('')
-  const avatarInputRef = useRef(null)
-  const [verifyIcUrl, setVerifyIcUrl] = useState('')
-  const [verifyMatricUrl, setVerifyMatricUrl] = useState('')
-  const [verifySelfieUrl, setVerifySelfieUrl] = useState('')
-  const verifyIcInputRef = useRef(null)
-  const verifyMatricInputRef = useRef(null)
-  const verifySelfieInputRef = useRef(null)
+  const [notifyEnabled, setNotifyEnabled] = useState(true)
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+  const [language, setLanguage] = useState('en')
+  const [currency, setCurrency] = useState('MYR')
+  const [timezone, setTimezone] = useState('Asia/Kuala_Lumpur')
+  const [lastLoginDisplay, setLastLoginDisplay] = useState('')
+  const [activeTab, setActiveTab] = useState('profile')
+  const [verifyDocs, setVerifyDocs] = useState({ icUrl: '', grantUrl: '', selfieUrl: '', submittedAt: null })
 
   const verifiedEmail = Boolean(user?.isVerified ?? user?.verified)
 
@@ -130,26 +178,10 @@ export default function LandlordMyAccountPage() {
     [user?.documentVerificationStatus],
   )
 
-  useEffect(() => {
-    if (!user?.id) return
-    const split = splitFullName(user.fullName)
-    setFirstName(split.first)
-    setLastName(split.last)
-    const digits = String(user.icNumber ?? '').replace(/\D/g, '')
-    if (digits.length === 12) {
-      setCountry('Malaysia')
-    } else {
-      setCountry(user.country && String(user.country).trim() ? String(user.country).trim() : 'Malaysia')
-    }
-    try {
-      setAvatarDataUrl(localStorage.getItem(LS_AVATAR(user.id)) ?? '')
-      setVerifyIcUrl(localStorage.getItem(LS_VERIFY_IC(user.id)) ?? '')
-      setVerifyMatricUrl(localStorage.getItem(LS_VERIFY_MATRIC(user.id)) ?? '')
-      setVerifySelfieUrl(localStorage.getItem(LS_VERIFY_SELFIE(user.id)) ?? '')
-    } catch {
-      setAvatarDataUrl('')
-    }
-  }, [user])
+  const displayName = useMemo(() => {
+    const full = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ')
+    return full || user?.fullName || 'Landlord'
+  }, [firstName, lastName, user?.fullName])
 
   const displayInitials = useMemo(() => {
     const f = firstName.trim()
@@ -158,6 +190,103 @@ export default function LandlordMyAccountPage() {
     if (f) return f.slice(0, 2).toUpperCase()
     return user?.fullName ? splitFullName(user.fullName).first.slice(0, 2).toUpperCase() : 'U'
   }, [firstName, lastName, user?.fullName])
+
+  const { steps: verificationProgressSteps, percent: verificationProgressPercent } = useMemo(
+    () =>
+      computeUploadProgress({
+        icUrl: verifyDocs.icUrl,
+        grantUrl: verifyDocs.grantUrl,
+        selfieUrl: verifyDocs.selfieUrl,
+        submittedAt: verifyDocs.submittedAt,
+      }),
+    [verifyDocs],
+  )
+
+  const profileCompleteness = useMemo(
+    () =>
+      computeProfileCompleteness({
+        user,
+        firstName,
+        lastName,
+        phone,
+        avatarDataUrl,
+        verificationState,
+      }),
+    [user, firstName, lastName, phone, avatarDataUrl, verificationState],
+  )
+
+  const profileMissingHint = useMemo(
+    () =>
+      getProfileMissingHint({
+        firstName,
+        lastName,
+        phone,
+        avatarDataUrl,
+        verificationState,
+      }),
+    [firstName, lastName, phone, avatarDataUrl, verificationState],
+  )
+
+  useEffect(() => {
+    if (!user?.id) return
+    resetFormFromUser(user, { setFirstName, setLastName, setPhone, setCountry })
+    try {
+      setAvatarDataUrl(localStorage.getItem(LS_AVATAR(user.id)) ?? '')
+      const prefs = readPrefs(user.id)
+      setNotifyEnabled(prefs.notify)
+      setTwoFactorEnabled(prefs.twoFactor)
+      setLanguage(prefs.language)
+      setCurrency(prefs.currency)
+      setTimezone(prefs.timezone)
+
+      const storedLogin = localStorage.getItem(LS_LAST_LOGIN(user.id))
+      const now = new Date().toISOString()
+      if (storedLogin) {
+        setLastLoginDisplay(formatLoginDisplay(storedLogin))
+      }
+      localStorage.setItem(LS_LAST_LOGIN(user.id), now)
+
+      const docs = readVerificationDocs(user.id)
+      setVerifyDocs({
+        icUrl: docs.icUrl,
+        grantUrl: docs.grantUrl,
+        selfieUrl: docs.selfieUrl,
+        submittedAt: docs.submittedAt,
+      })
+    } catch {
+      setAvatarDataUrl('')
+    }
+  }, [user])
+
+  function persistPrefs(next) {
+    if (!user?.id) return
+    writePrefs(user.id, next)
+  }
+
+  function handleNotifyChange(value) {
+    setNotifyEnabled(value)
+    persistPrefs({ notify: value, twoFactor: twoFactorEnabled, language, currency, timezone })
+  }
+
+  function handleTwoFactorChange(value) {
+    setTwoFactorEnabled(value)
+    persistPrefs({ notify: notifyEnabled, twoFactor: value, language, currency, timezone })
+  }
+
+  function handleLanguageChange(value) {
+    setLanguage(value)
+    persistPrefs({ notify: notifyEnabled, twoFactor: twoFactorEnabled, language: value, currency, timezone })
+  }
+
+  function handleCurrencyChange(value) {
+    setCurrency(value)
+    persistPrefs({ notify: notifyEnabled, twoFactor: twoFactorEnabled, language, currency: value, timezone })
+  }
+
+  function handleTimezoneChange(value) {
+    setTimezone(value)
+    persistPrefs({ notify: notifyEnabled, twoFactor: twoFactorEnabled, language, currency, timezone: value })
+  }
 
   async function saveProfile(e) {
     e.preventDefault()
@@ -185,7 +314,7 @@ export default function LandlordMyAccountPage() {
         },
         body: JSON.stringify({
           fullName,
-          phoneNumber: user.phoneNumber || undefined,
+          phoneNumber: phone.trim() || null,
           country: countryVal,
         }),
       })
@@ -203,6 +332,11 @@ export default function LandlordMyAccountPage() {
     }
   }
 
+  function handleCancelProfile() {
+    if (!user) return
+    resetFormFromUser(user, { setFirstName, setLastName, setPhone, setCountry })
+  }
+
   function onAvatarSelected(e) {
     const file = e.target.files?.[0]
     if (!file || !user?.id) return
@@ -216,33 +350,6 @@ export default function LandlordMyAccountPage() {
         setAvatarDataUrl(url)
         window.dispatchEvent(new CustomEvent('mysewa-local-profile-saved'))
       } catch {
-        /* quota or disabled */
-      }
-    }
-    reader.readAsDataURL(file)
-    e.target.value = ''
-  }
-
-  function onVerificationImageChosen(slot, e) {
-    const file = e.target.files?.[0]
-    if (!file || !user?.id) return
-    if (!file.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = String(reader.result || '')
-      if (!url) return
-      try {
-        if (slot === 'ic') {
-          localStorage.setItem(LS_VERIFY_IC(user.id), url)
-          setVerifyIcUrl(url)
-        } else if (slot === 'matric') {
-          localStorage.setItem(LS_VERIFY_MATRIC(user.id), url)
-          setVerifyMatricUrl(url)
-        } else {
-          localStorage.setItem(LS_VERIFY_SELFIE(user.id), url)
-          setVerifySelfieUrl(url)
-        }
-      } catch {
         /* quota */
       }
     }
@@ -250,552 +357,102 @@ export default function LandlordMyAccountPage() {
     e.target.value = ''
   }
 
-  function clearAllVerificationImages() {
-    if (!user?.id) return
-    try {
-      localStorage.removeItem(LS_VERIFY_IC(user.id))
-      localStorage.removeItem(LS_VERIFY_MATRIC(user.id))
-      localStorage.removeItem(LS_VERIFY_SELFIE(user.id))
-      setVerifyIcUrl('')
-      setVerifyMatricUrl('')
-      setVerifySelfieUrl('')
-      if (verifyIcInputRef.current) verifyIcInputRef.current.value = ''
-      if (verifyMatricInputRef.current) verifyMatricInputRef.current.value = ''
-      if (verifySelfieInputRef.current) verifySelfieInputRef.current.value = ''
-    } catch {
-      /* ignore */
-    }
+  if (loading) {
+    return (
+      <LandlordLayout>
+        <div className="flex min-h-[40vh] items-center justify-center bg-[#FAFAFA]">
+          <p className="text-sm text-[#4A5568]">Loading your account…</p>
+        </div>
+      </LandlordLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <LandlordLayout>
+        <div className="mx-auto max-w-4xl px-4 py-8">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            Error: {error}
+          </div>
+        </div>
+      </LandlordLayout>
+    )
+  }
+
+  if (!user) {
+    return (
+      <LandlordLayout>
+        <div className="flex min-h-[40vh] items-center justify-center bg-[#FAFAFA]">
+          <p className="text-sm text-[#4A5568]">No account loaded.</p>
+        </div>
+      </LandlordLayout>
+    )
   }
 
   return (
-    <DashboardShell properties blend>
-      <div className="student-account-page-with-footer">
-        <div className="student-account-info-layout student-account-page-blend">
-        <h1 className="student-account-info-title">Account Information</h1>
-        {loading ? <div className="auth-toast">Loading your account…</div> : null}
-        {!loading && error ? <div className="auth-toast auth-toast-error">Error: {error}</div> : null}
-        {!loading && !error && user ? (
-          <>
-            <form className="student-account-info-card" onSubmit={saveProfile}>
-              <div className="student-account-info-avatar-block">
-                <input
-                  ref={avatarInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="visually-hidden"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  onChange={onAvatarSelected}
-                />
-                <div className="student-account-info-avatar-wrap">
-                  <button
-                    type="button"
-                    className="student-account-info-avatar-btn"
-                    onClick={() => avatarInputRef.current?.click()}
-                    aria-label="Choose profile photo from your device"
-                  >
-                    {avatarDataUrl ? (
-                      <img src={avatarDataUrl} alt="" className="student-account-info-avatar-img" />
-                    ) : (
-                      <span className="student-account-info-avatar-fallback">{displayInitials}</span>
-                    )}
-                  </button>
-                </div>
-                <p className="student-account-info-avatar-hint">Click to upload profile picture</p>
-              </div>
-
-              <div className="student-account-info-grid">
-                <div className="student-account-field-stack">
-                  <div className="student-account-field">
-                    <div className="student-account-field-label-row">
-                      <label className="student-account-field-label" htmlFor="acc-first">
-                        First name (Display name)
-                      </label>
-                    </div>
-                    <div className="student-account-field-input-wrap">
-                      <input
-                        id="acc-first"
-                        className="student-account-field-input"
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        autoComplete="given-name"
-                      />
-                      <span className="student-account-field-icon" aria-hidden="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="8" r="4" />
-                          <path d="M4 20c1.5-4 4-6 8-6s6.5 2 8 6" strokeLinecap="round" />
-                        </svg>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-last">
-                      Last name
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap">
-                    <input
-                      id="acc-last"
-                      className="student-account-field-input"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      autoComplete="family-name"
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="8" r="4" />
-                        <path d="M4 20c1.5-4 4-6 8-6s6.5 2 8 6" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-email">
-                      Email
-                    </label>
-                    {verifiedEmail ? (
-                      <span className="student-account-verified">
-                        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-                          <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                        </svg>
-                        Verified
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-email"
-                      type="email"
-                      className="student-account-field-input"
-                      value={user.email || ''}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="5" width="18" height="14" rx="2" />
-                        <path d="M3 7l9 6 9-6" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-phone">
-                      Phone number
-                    </label>
-                    {user.phoneNumber ? (
-                      <span className="student-account-verified">
-                        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-                          <path fill="currentColor" d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                        </svg>
-                        On file
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-phone"
-                      type="tel"
-                      className="student-account-field-input"
-                      value={user.phoneNumber || ''}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.86.33 1.7.63 2.5a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.58-1.2a2 2 0 0 1 2.11-.45c.8.3 1.64.5 2.5.63A2 2 0 0 1 22 16.92z" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-ic">
-                      Identity Card
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-ic"
-                      className="student-account-field-input"
-                      value={user.icNumber ? maskIc(user.icNumber) : ''}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="4" y="5" width="16" height="14" rx="2" />
-                        <path d="M8 9h8M8 13h5" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-dob-display">
-                      Date of birth
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-dob-display"
-                      className="student-account-field-input"
-                      value={dobFromIcIso ? formatDobDdMmYyyy(dobFromIcIso) : '—'}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="4" width="18" height="18" rx="2" />
-                        <path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-gender-display">
-                      Gender
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-gender-display"
-                      className="student-account-field-input"
-                      value={genderFromIc ?? '—'}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="8" r="4" />
-                        <path d="M4 20c1.5-4 4-6 8-6s6.5 2 8 6" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-state-display">
-                      State
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-state-display"
-                      className="student-account-field-input"
-                      value={stateFromIc ?? '—'}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 21s7-4.5 7-11a7 7 0 1 0-14 0c0 6.5 7 11 7 11z" strokeLinecap="round" />
-                        <circle cx="12" cy="10" r="2.5" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field student-account-field--full">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-country">
-                      Country
-                    </label>
-                  </div>
-                  {hasMalaysianIc ? (
-                    <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                      <input
-                        id="acc-country"
-                        className="student-account-field-input"
-                        value="Malaysia"
-                        readOnly
-                        tabIndex={-1}
-                      />
-                      <span className="student-account-field-icon" aria-hidden="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="9" />
-                          <path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20" />
-                        </svg>
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="student-account-field-input-wrap student-account-field-select-wrap">
-                      <select
-                        id="acc-country"
-                        className="student-account-field-input student-account-field-select"
-                        value={country}
-                        onChange={(e) => setCountry(e.target.value)}
-                      >
-                        {COUNTRIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="student-account-field-icon student-account-field-chevron" aria-hidden="true">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M6 9l6 6 6-6" strokeLinecap="round" />
-                        </svg>
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-race-display">
-                      Race
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-race-display"
-                      className="student-account-field-input"
-                      value={user.race?.trim() ? user.race : '—'}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="8" r="4" />
-                        <path d="M4 20c1.5-4 4-6 8-6s6.5 2 8 6" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-                <div className="student-account-field">
-                  <div className="student-account-field-label-row">
-                    <label className="student-account-field-label" htmlFor="acc-religion-display">
-                      Religion
-                    </label>
-                  </div>
-                  <div className="student-account-field-input-wrap student-account-field-input-wrap--readonly">
-                    <input
-                      id="acc-religion-display"
-                      className="student-account-field-input"
-                      value={user.religion?.trim() ? user.religion : '—'}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <span className="student-account-field-icon" aria-hidden="true">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="8" r="4" />
-                        <path d="M4 20c1.5-4 4-6 8-6s6.5 2 8 6" strokeLinecap="round" />
-                      </svg>
-                    </span>
-                  </div>
-                </div>
-
-              </div>
-
-              <div className="student-account-info-actions">
-                {savedFlash ? (
-                  <p className="student-account-inline-toast" role="status">
-                    Profile saved — stored on the server.
-                  </p>
-                ) : null}
-                <div className="student-account-info-buttons">
-                  <button type="submit" className="student-account-btn-primary" disabled={profileSaving}>
-                    {profileSaving ? 'Saving…' : 'Save changes'}
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            <section className="student-account-verify-section" aria-labelledby="account-verify-heading">
-              <h2 id="account-verify-heading" className="student-account-verify-heading">
-                Account Verification
-              </h2>
-              <div className="student-account-verify-identity" role="status">
-                <VerificationStateOrb state={verificationState} />
-              </div>
-              <p className="student-account-verify-lead">
-                Landlord need to upload three files according as below to confirm your identity. Uploads are reviewed by
-                the MySewa system.
-              </p>
-              <div className="student-account-verify-grid">
-                <div className="student-account-verify-card">
-                  <input
-                    ref={verifyIcInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="visually-hidden"
-                    aria-hidden="true"
-                    tabIndex={-1}
-                    onChange={(e) => onVerificationImageChosen('ic', e)}
-                  />
-                  <button
-                    type="button"
-                    className="student-account-verify-placeholder student-account-verify-placeholder--interactive"
-                    onClick={() => verifyIcInputRef.current?.click()}
-                    aria-label="Choose Identity Card photo"
-                  >
-                    {verifyIcUrl ? (
-                      <img src={verifyIcUrl} alt="" className="student-account-verify-preview-img" />
-                    ) : (
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                        <rect x="4" y="5" width="16" height="14" rx="2" />
-                        <circle cx="12" cy="10" r="2.5" />
-                        <path d="M8 17c1.2-2 3.4-3 4-3s2.8 1 4 3" strokeLinecap="round" />
-                      </svg>
-                    )}
-                  </button>
-                  <p className="student-account-verify-card-title">Identity Card</p>
-                  <p className="student-account-verify-card-hint">Photo of the front of your Identity Card.</p>
-                  <button
-                    type="button"
-                    className="student-account-verify-btn student-account-verify-btn--active"
-                    onClick={() => verifyIcInputRef.current?.click()}
-                  >
-                    {verifyIcUrl ? 'Replace image' : 'Choose file'}
-                  </button>
-                </div>
-                <div className="student-account-verify-card">
-                  <input
-                    ref={verifyMatricInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="visually-hidden"
-                    aria-hidden="true"
-                    tabIndex={-1}
-                    onChange={(e) => onVerificationImageChosen('matric', e)}
-                  />
-                  <button
-                    type="button"
-                    className="student-account-verify-placeholder student-account-verify-placeholder--interactive"
-                    onClick={() => verifyMatricInputRef.current?.click()}
-                    aria-label="Choose grant or property tax receipt photo"
-                  >
-                    {verifyMatricUrl ? (
-                      <img src={verifyMatricUrl} alt="" className="student-account-verify-preview-img" />
-                    ) : (
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                        <path d="M7 4h10v16H7z" />
-                        <path d="M9 8h6M9 12h6M9 16h4" strokeLinecap="round" />
-                      </svg>
-                    )}
-                  </button>
-                  <p className="student-account-verify-card-title">Grant or Property Tax Receipt</p>
-                  <p className="student-account-verify-card-hint">Photo of your grant or property tax receipt.</p>
-                  <button
-                    type="button"
-                    className="student-account-verify-btn student-account-verify-btn--active"
-                    onClick={() => verifyMatricInputRef.current?.click()}
-                  >
-                    {verifyMatricUrl ? 'Replace image' : 'Choose file'}
-                  </button>
-                </div>
-                <div className="student-account-verify-card">
-                  <input
-                    ref={verifySelfieInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="visually-hidden"
-                    aria-hidden="true"
-                    tabIndex={-1}
-                    onChange={(e) => onVerificationImageChosen('selfie', e)}
-                  />
-                  <button
-                    type="button"
-                    className="student-account-verify-placeholder student-account-verify-placeholder--interactive"
-                    onClick={() => verifySelfieInputRef.current?.click()}
-                    aria-label="Choose selfie photo"
-                  >
-                    {verifySelfieUrl ? (
-                      <img src={verifySelfieUrl} alt="" className="student-account-verify-preview-img" />
-                    ) : (
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                        <circle cx="12" cy="9" r="3.5" />
-                        <path d="M6 20c1.2-3 3.6-5 6-5s4.8 2 6 5" strokeLinecap="round" />
-                      </svg>
-                    )}
-                  </button>
-                  <p className="student-account-verify-card-title">Selfie</p>
-                  <p className="student-account-verify-card-hint">
-                    Take a selfie just yourself. 
-                  </p>
-                  <button
-                    type="button"
-                    className="student-account-verify-btn student-account-verify-btn--active"
-                    onClick={() => verifySelfieInputRef.current?.click()}
-                  >
-                    {verifySelfieUrl ? 'Replace image' : 'Choose file'}
-                  </button>
-                </div>
-                <div className="student-account-verify-clear-row">
-                  <button type="button" className="student-account-verify-clear-all-btn" onClick={clearAllVerificationImages}>
-                    Clear All Files
-                  </button>
-                </div>
-              </div>
-            </section>
-          </>
-        ) : null}
-        </div>
-        <footer className="student-account-page-footer" role="contentinfo">
-          <div className="student-account-footer-main">
-            <div className="student-account-footer-brand">
-              <div className="student-account-footer-logo-row">
-                <span className="student-account-footer-logo-text">MySewa</span>
-              </div>
-              <p className="student-account-footer-tagline">
-                MySewa helps students find trusted rentals near campus — search listings, manage applications, and keep
-                your tenancy details in one place.
-              </p>
-            </div>
-            <div className="student-account-footer-nav">
-              <div className="student-account-footer-col">
-                <h3 className="student-account-footer-col-title">Contact us</h3>
-                <ul className="student-account-footer-links">
-                  <li>
-                    <Link className="student-account-footer-link" to="/">
-                      Customer support
-                    </Link>
-                  </li>
-                </ul>
-              </div>
-              <div className="student-account-footer-col">
-                <h3 className="student-account-footer-col-title">About</h3>
-                <ul className="student-account-footer-links">
-                  <li>
-                    <Link className="student-account-footer-link" to="/">
-                      About MySewa
-                    </Link>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-          <div className="student-account-footer-divider" aria-hidden="true" />
-          <div className="student-account-footer-legal">
-            <p className="student-account-footer-copyright">© {new Date().getFullYear()} MySewa. All rights reserved.</p>
-            <nav className="student-account-footer-legal-nav" aria-label="Legal" />
-          </div>
-        </footer>
-      </div>
-    </DashboardShell>
+    <LandlordLayout>
+      <input
+        ref={avatarInputRef}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={onAvatarSelected}
+      />
+      <LandlordAccount
+        user={user}
+        displayName={displayName}
+        displayInitials={displayInitials}
+        avatarDataUrl={avatarDataUrl}
+        verifiedEmail={verifiedEmail}
+        verificationState={verificationState}
+        verificationLabel={VERIFICATION_STATE_LABEL[verificationState] || 'Pending'}
+        firstName={firstName}
+        lastName={lastName}
+        phone={phone}
+        icDisplay={user.icNumber ? maskIc(user.icNumber) : '—'}
+        country={country}
+        countries={COUNTRIES}
+        hasMalaysianIc={hasMalaysianIc}
+        dobDisplay={dobFromIcIso ? formatDobDdMmYyyy(dobFromIcIso) : '—'}
+        genderDisplay={genderFromIc ?? '—'}
+        stateDisplay={stateFromIc ?? '—'}
+        raceDisplay={user.race?.trim() ? user.race : '—'}
+        profileSaving={profileSaving}
+        savedFlash={savedFlash}
+        notifyEnabled={notifyEnabled}
+        twoFactorEnabled={twoFactorEnabled}
+        language={language}
+        currency={currency}
+        timezone={timezone}
+        lastLoginDisplay={lastLoginDisplay}
+        profileCompleteness={profileCompleteness}
+        profileMissingHint={profileMissingHint}
+        verificationProgressSteps={verificationState === 'verified' ? 4 : verificationProgressSteps}
+        verificationProgressPercent={verificationState === 'verified' ? 100 : verificationProgressPercent}
+        icUploaded={Boolean(verifyDocs.icUrl)}
+        grantUploaded={Boolean(verifyDocs.grantUrl)}
+        selfieUploaded={Boolean(verifyDocs.selfieUrl)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onAvatarClick={() => avatarInputRef.current?.click()}
+        onFirstNameChange={setFirstName}
+        onLastNameChange={setLastName}
+        onPhoneChange={setPhone}
+        onCountryChange={setCountry}
+        onNotifyChange={handleNotifyChange}
+        onTwoFactorChange={handleTwoFactorChange}
+        onLanguageChange={handleLanguageChange}
+        onCurrencyChange={handleCurrencyChange}
+        onTimezoneChange={handleTimezoneChange}
+        onSaveProfile={saveProfile}
+        onCancelProfile={handleCancelProfile}
+        onCompleteVerification={() => navigate('/dashboard/landlord/verification')}
+        onUploadDocuments={() => navigate('/dashboard/landlord/verification')}
+        onCompleteProfile={() => setActiveTab('profile')}
+        onChangePassword={() => navigate('/reset-password')}
+      />
+    </LandlordLayout>
   )
-}
-
-function maskIc(ic) {
-  const d = String(ic).replace(/\D/g, '')
-  if (d.length === 12) {
-    return `••••••-••-${d.slice(-4)}`
-  }
-  const s = String(ic).trim()
-  if (s.length <= 4) return '••••'
-  return `${'•'.repeat(Math.max(0, s.length - 4))}${s.slice(-4)}`
 }

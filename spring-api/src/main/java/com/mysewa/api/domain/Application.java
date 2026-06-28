@@ -1,14 +1,14 @@
 package com.mysewa.api.domain;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Access;
-import javax.persistence.AccessType;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Table;
-import javax.persistence.UniqueConstraint;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Access;
+import jakarta.persistence.AccessType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -52,6 +52,10 @@ public class Application {
     /** Deposit in MYR set by the landlord when accepting (student payment flows use this when present). */
     @Column(name = "landlord_deposit_amount", precision = 12, scale = 2)
     private BigDecimal landlordDepositAmount;
+
+    /** Optional note from the landlord when approving or rejecting (max 500 chars). */
+    @Column(name = "landlord_message", length = 500)
+    private String landlordMessage;
 
     @Column(nullable = false, length = 32)
     private String status = "pending";
@@ -124,6 +128,14 @@ public class Application {
 
     public void setLandlordDepositAmount(BigDecimal landlordDepositAmount) {
         this.landlordDepositAmount = landlordDepositAmount;
+    }
+
+    public String getLandlordMessage() {
+        return landlordMessage;
+    }
+
+    public void setLandlordMessage(String landlordMessage) {
+        this.landlordMessage = landlordMessage;
     }
 
     public String getStatus() {

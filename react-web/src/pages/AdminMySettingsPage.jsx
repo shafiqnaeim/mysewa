@@ -1,52 +1,284 @@
-import DashboardShell from '../components/DashboardShell'
-import UniversityCampusCrudSection from '../components/UniversityCampusCrudSection'
+import { useCallback, useEffect, useState } from 'react'
+import AdminLayout from '../components/AdminLayout'
 import { useAdminGuard } from '../hooks/useAdminGuard'
+import { useToast } from '../context/ToastContext'
+import {
+  readAdminSystemSettings,
+  writeAdminSystemSettings,
+} from '../utils/adminSystemSettings'
+import {
+  createUniversity,
+  deleteUniversity,
+  fetchAdminUniversities,
+  updateUniversity,
+} from '../utils/universitiesApi'
+import AdminSettings from './dashboard/AdminSettings'
+
+const EMPTY_UNI_FORM = {
+  code: '',
+  name: '',
+  city: '',
+  state: '',
+  postcode: '',
+  active: true,
+  sortOrder: '',
+}
 
 export default function AdminMySettingsPage() {
-  const { user, loading: authLoading, error: authError, token } = useAdminGuard()
+  const { loading, error, token } = useAdminGuard()
+  const { pushToast } = useToast()
+
+  const [activeTab, setActiveTab] = useState('general')
+  const [settings, setSettings] = useState(() => readAdminSystemSettings())
+  const [settingsSaving, setSettingsSaving] = useState(false)
+
+  const [universities, setUniversities] = useState([])
+  const [universitiesLoading, setUniversitiesLoading] = useState(false)
+  const [uniModalMode, setUniModalMode] = useState(null)
+  const [uniForm, setUniForm] = useState(EMPTY_UNI_FORM)
+  const [uniDraftLat, setUniDraftLat] = useState('')
+  const [uniDraftLng, setUniDraftLng] = useState('')
+  const [uniSelectedId, setUniSelectedId] = useState(null)
+  const [uniSaving, setUniSaving] = useState(false)
+
+  const [mapSelectedId, setMapSelectedId] = useState(null)
+  const [mapDraftLat, setMapDraftLat] = useState('')
+  const [mapDraftLng, setMapDraftLng] = useState('')
+  const [mapSaving, setMapSaving] = useState(false)
+
+  const loadUniversities = useCallback(async () => {
+    if (!token) return
+    setUniversitiesLoading(true)
+    try {
+      const list = await fetchAdminUniversities(token)
+      setUniversities(list)
+    } catch (e) {
+      setUniversities([])
+      pushToast({ message: e.message || 'Unable to load universities.', type: 'error' })
+    } finally {
+      setUniversitiesLoading(false)
+    }
+  }, [token, pushToast])
+
+  useEffect(() => {
+    if (token) void loadUniversities()
+  }, [token, loadUniversities])
+
+  function handleSettingsChange(key, value) {
+    setSettings((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function handleSaveSettings() {
+    setSettingsSaving(true)
+    try {
+      writeAdminSystemSettings(settings)
+      pushToast({ message: 'Settings saved.', type: 'success' })
+    } catch (e) {
+      pushToast({ message: e.message || 'Could not save settings.', type: 'error' })
+    } finally {
+      setSettingsSaving(false)
+    }
+  }
+
+  function openUniCreate() {
+    setUniModalMode('create')
+    setUniSelectedId(null)
+    setUniForm(EMPTY_UNI_FORM)
+    setUniDraftLat('')
+    setUniDraftLng('')
+  }
+
+  function openUniEdit(u) {
+    setUniModalMode('edit')
+    setUniSelectedId(u.id)
+    setUniForm({
+      code: u.code || '',
+      name: u.name || '',
+      city: u.city || '',
+      state: u.state || '',
+      postcode: u.postcode || '',
+      active: u.active !== false,
+      sortOrder: u.sortOrder != null ? String(u.sortOrder) : '',
+    })
+    setUniDraftLat(u.latitude != null ? String(u.latitude) : '')
+    setUniDraftLng(u.longitude != null ? String(u.longitude) : '')
+  }
+
+  function closeUniModal() {
+    if (uniSaving) return
+    setUniModalMode(null)
+    setUniSelectedId(null)
+    setUniForm(EMPTY_UNI_FORM)
+    setUniDraftLat('')
+    setUniDraftLng('')
+  }
+
+  function buildUniPayload() {
+    const body = {
+      code: uniForm.code.trim().toUpperCase(),
+      name: uniForm.name.trim(),
+      city: uniForm.city.trim() || null,
+      state: uniForm.state.trim() || null,
+      postcode: uniForm.postcode.trim() || null,
+      active: uniForm.active,
+      latitude: Number(uniDraftLat),
+      longitude: Number(uniDraftLng),
+    }
+    if (uniForm.sortOrder !== '') {
+      body.sortOrder = Number(uniForm.sortOrder)
+    }
+    return body
+  }
+
+  async function handleUniSave() {
+    if (!token) return
+    if (!uniForm.code.trim() || !uniForm.name.trim()) {
+      pushToast({ message: 'Code and name are required.', type: 'error' })
+      return
+    }
+    if (!uniDraftLat || !uniDraftLng) {
+      pushToast({ message: 'Place a pin on the map before saving.', type: 'error' })
+      return
+    }
+    setUniSaving(true)
+    try {
+      const body = buildUniPayload()
+      if (uniModalMode === 'create') {
+        await createUniversity(token, body)
+        pushToast({ message: 'University created.', type: 'success' })
+      } else if (uniSelectedId) {
+        await updateUniversity(token, uniSelectedId, body)
+        pushToast({ message: 'University updated.', type: 'success' })
+      }
+      closeUniModal()
+      await loadUniversities()
+    } catch (e) {
+      pushToast({ message: e.message || 'Save failed.', type: 'error' })
+    } finally {
+      setUniSaving(false)
+    }
+  }
+
+  async function handleUniDelete(u) {
+    if (!token) return
+    if (!window.confirm(`Delete "${u.name}" (${u.code})?`)) return
+    try {
+      await deleteUniversity(token, u.id)
+      if (mapSelectedId === u.id) {
+        setMapSelectedId(null)
+        setMapDraftLat('')
+        setMapDraftLng('')
+      }
+      pushToast({ message: 'University deleted.', type: 'success' })
+      await loadUniversities()
+    } catch (e) {
+      pushToast({ message: e.message || 'Delete failed.', type: 'error' })
+    }
+  }
+
+  function handleUniEditOnMap(u) {
+    setActiveTab('campus-map')
+    setMapSelectedId(u.id)
+    setMapDraftLat(u.latitude != null ? String(u.latitude) : '')
+    setMapDraftLng(u.longitude != null ? String(u.longitude) : '')
+  }
+
+  function handleMapSelect(u) {
+    setMapSelectedId(u.id)
+    setMapDraftLat(u.latitude != null ? String(u.latitude) : '')
+    setMapDraftLng(u.longitude != null ? String(u.longitude) : '')
+  }
+
+  async function handleMapSaveCoords() {
+    if (!token || !mapSelectedId) return
+    const campus = universities.find((u) => u.id === mapSelectedId)
+    if (!campus) return
+    if (!mapDraftLat || !mapDraftLng) {
+      pushToast({ message: 'Set coordinates on the map first.', type: 'error' })
+      return
+    }
+    setMapSaving(true)
+    try {
+      await updateUniversity(token, mapSelectedId, {
+        code: campus.code,
+        name: campus.name,
+        city: campus.city || null,
+        state: campus.state || null,
+        postcode: campus.postcode || null,
+        active: campus.active !== false,
+        sortOrder: campus.sortOrder,
+        latitude: Number(mapDraftLat),
+        longitude: Number(mapDraftLng),
+      })
+      pushToast({ message: 'Coordinates saved.', type: 'success' })
+      await loadUniversities()
+    } catch (e) {
+      pushToast({ message: e.message || 'Could not save coordinates.', type: 'error' })
+    } finally {
+      setMapSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex min-h-[40vh] items-center justify-center bg-[#FAFAFA]">
+          <p className="text-sm text-[#6B7280]">Verifying privileges…</p>
+        </div>
+      </AdminLayout>
+    )
+  }
+
+  if (error) {
+    return (
+      <AdminLayout>
+        <div className="mx-auto max-w-7xl px-4 py-8">
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {error}
+          </div>
+        </div>
+      </AdminLayout>
+    )
+  }
 
   return (
-    <DashboardShell blend>
-      <div className="admin-settings-page student-account-page-with-footer">
-        <header className="admin-settings-header">
-          <div className="admin-settings-header-copy">
-            <p className="admin-settings-eyebrow">System settings</p>
-            <h1 className="admin-settings-title">mySettings</h1>
-            <p className="admin-settings-lead">
-              Administrator tools grouped by topic. Manage university reference data and campus coordinates used across
-              the platform.
-            </p>
-          </div>
-        </header>
-
-        {authLoading ? <div className="auth-toast">Verifying privileges…</div> : null}
-        {authError ? <div className="auth-toast auth-toast-error">{authError}</div> : null}
-
-        {!authLoading && !authError && user && token ? (
-          <>
-            <section className="admin-settings-section" aria-labelledby="admin-settings-about-heading">
-              <h2 id="admin-settings-about-heading" className="admin-settings-section-title">
-                About this page
-              </h2>
-              <p className="admin-settings-section-lead">
-                Distance hints on landlord listings use the official coordinates you maintain here. Keep codes stable
-                (for example UMT, UniSZA) so historical data stays meaningful.
-              </p>
-            </section>
-
-            <section className="admin-settings-section admin-settings-section--accent" aria-labelledby="admin-uni-section-heading">
-              <h2 id="admin-uni-section-heading" className="admin-settings-section-title">
-                University locations
-              </h2>
-              <p className="admin-settings-section-lead">
-                Interactive map of all pinned campuses, with a sortable list and full create / read / update / delete
-                workflow underneath.
-              </p>
-              <UniversityCampusCrudSection token={token} />
-            </section>
-          </>
-        ) : null}
-      </div>
-    </DashboardShell>
+    <AdminLayout>
+      <AdminSettings
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        settings={settings}
+        settingsSaving={settingsSaving}
+        onSettingsChange={handleSettingsChange}
+        onSaveSettings={handleSaveSettings}
+        universities={universities}
+        universitiesLoading={universitiesLoading}
+        uniModalMode={uniModalMode}
+        uniForm={uniForm}
+        uniDraftLat={uniDraftLat}
+        uniDraftLng={uniDraftLng}
+        uniSaving={uniSaving}
+        onUniFormChange={(key, value) => setUniForm((prev) => ({ ...prev, [key]: value }))}
+        onUniPinChange={(lat, lng) => {
+          setUniDraftLat(String(lat))
+          setUniDraftLng(String(lng))
+        }}
+        onUniModalClose={closeUniModal}
+        onUniSave={handleUniSave}
+        onUniAdd={openUniCreate}
+        onUniEdit={openUniEdit}
+        onUniDelete={handleUniDelete}
+        onUniEditOnMap={handleUniEditOnMap}
+        mapSelectedId={mapSelectedId}
+        onMapSelect={handleMapSelect}
+        onMapSaveCoords={handleMapSaveCoords}
+        mapDraftLat={mapDraftLat}
+        mapDraftLng={mapDraftLng}
+        onMapPinChange={(lat, lng) => {
+          setMapDraftLat(String(lat))
+          setMapDraftLng(String(lng))
+        }}
+        mapSaving={mapSaving}
+      />
+    </AdminLayout>
   )
 }

@@ -1,11 +1,11 @@
 package com.mysewa.api.domain;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
-import javax.persistence.Id;
-import javax.persistence.Table;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 @Entity
@@ -28,7 +28,7 @@ public class UserAccount {
     @Column(name = "phone_number", nullable = false)
     private String phoneNumber;
 
-    @Column(name = "ic_number", nullable = false)
+    @Column(name = "ic_number", nullable = false, length = 255)
     private String icNumber;
 
     @Column(nullable = false)
@@ -52,6 +52,12 @@ public class UserAccount {
 
     @Column(name = "document_verification_status")
     private String documentVerificationStatus;
+
+    @Column(name = "verification_submitted_at")
+    private LocalDateTime verificationSubmittedAt;
+
+    @Column(name = "verification_rejection_reason", length = 1000)
+    private String verificationRejectionReason;
 
     /** Nationality / residence country (optional; Malaysian IC implies Malaysia in UI). */
     @Column(name = "country", length = 100)
@@ -186,6 +192,22 @@ public class UserAccount {
 
     public void setDocumentVerificationStatus(String documentVerificationStatus) {
         this.documentVerificationStatus = documentVerificationStatus;
+    }
+
+    public LocalDateTime getVerificationSubmittedAt() {
+        return verificationSubmittedAt;
+    }
+
+    public void setVerificationSubmittedAt(LocalDateTime verificationSubmittedAt) {
+        this.verificationSubmittedAt = verificationSubmittedAt;
+    }
+
+    public String getVerificationRejectionReason() {
+        return verificationRejectionReason;
+    }
+
+    public void setVerificationRejectionReason(String verificationRejectionReason) {
+        this.verificationRejectionReason = verificationRejectionReason;
     }
 
     public String getCountry() {

@@ -1,21 +1,27 @@
 /** Single source of truth for property amenities (form, cards, view). */
 
 export const AMENITY_CATALOG = [
-  { id: 'wifi', label: 'Wi-Fi' },
-  { id: 'parking', label: 'Parking' },
-  { id: 'aircond', label: 'Air conditioning' },
   { id: 'furnished', label: 'Furnished' },
-  { id: 'washing', label: 'Washing machine' },
+  { id: 'wifi', label: 'WiFi Available' },
+  { id: 'aircond', label: 'Air Conditioning' },
+  { id: 'pet_friendly', label: 'Pet Friendly' },
+  { id: 'parking', label: 'Parking Available' },
+  { id: 'utilities', label: 'Utilities Included' },
+  { id: 'water_heater', label: 'Water Heater' },
+  { id: 'pool', label: 'Pool Access' },
+  { id: 'gym', label: 'Gym Access' },
+  { id: 'security', label: 'Security Guard' },
+  { id: 'tv', label: 'TV / Smart TV' },
+  { id: 'power_backup', label: 'Power Backup' },
+  { id: 'washing', label: 'Washing Machine' },
+  { id: 'kitchen', label: 'Kitchen Equipped' },
+  { id: 'private_bathroom', label: 'Private Bathroom' },
+  { id: 'garden', label: 'Garden Access' },
   { id: 'fridge', label: 'Refrigerator' },
-  { id: 'water_heater', label: 'Water heater' },
-  { id: 'kitchen', label: 'Kitchen' },
   { id: 'desk', label: 'Study desk' },
   { id: 'wardrobe', label: 'Wardrobe' },
-  { id: 'private_bathroom', label: 'Private bathroom' },
   { id: 'cctv', label: 'CCTV' },
-  { id: 'security', label: 'Gated security' },
   { id: 'balcony', label: 'Balcony' },
-  { id: 'utilities', label: 'Utilities included' },
 ]
 
 export const AMENITY_ORDER = AMENITY_CATALOG.map((a) => a.id)

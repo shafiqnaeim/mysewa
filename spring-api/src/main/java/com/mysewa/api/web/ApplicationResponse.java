@@ -37,8 +37,20 @@ public class ApplicationResponse {
     public Boolean depositSetByLandlord;
     /** Deposit in MYR the landlord entered when accepting; null on older rows or before accept. */
     public BigDecimal landlordDepositAmount;
-    /** Amount the student should pay (landlord-set when present, else rent-based prototype). */
+    /** Required deposit from the property listing (landlord-configured). */
+    public BigDecimal depositAmount;
+    /** Deposit from the property listing raw value (same source as {@link #depositAmount}). */
+    public BigDecimal propertyDepositAmount;
+    /** Payment status for the tenancy deposit: {@code pending} or {@code paid}. */
+    public String depositStatus;
+    /** Lifecycle key: pending, pending_payment, confirmed, active, completed, rejected. */
+    public String displayStatus;
+    /** Human label for {@link #displayStatus}. */
+    public String displayStatusLabel;
+    /** @deprecated Prefer {@link #depositAmount}. Legacy alias for required deposit. */
     public BigDecimal depositAmountSuggested;
+    /** Optional note from the landlord when the application was approved or rejected. */
+    public String landlordMessage;
 
     public static class ApplicationStudentSnippet {
         public Integer id;
@@ -63,6 +75,7 @@ public class ApplicationResponse {
         r.leaseEndDate = a.getLeaseEnd();
         r.leaseDays = a.getLeaseDays();
         r.landlordDepositAmount = a.getLandlordDepositAmount();
+        r.landlordMessage = a.getLandlordMessage();
         r.depositSetByLandlord =
                 a.getLandlordDepositAmount() != null && a.getLandlordDepositAmount().compareTo(BigDecimal.ZERO) > 0;
         r.createdAt = a.getCreatedAt() != null ? ISO.format(a.getCreatedAt()) : null;

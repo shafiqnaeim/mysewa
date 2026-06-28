@@ -4,6 +4,7 @@ Copy each section into `docs/PamerKom2026-PosterTemplate.pptx`. Replace brackete
 
 **Template:** `docs/PamerKom2026-PosterTemplate.pptx`  
 **Template preview:** see poster layout (ABSTRACT → DEMO QR CODE boxes)  
+**Live demo:** http://68.183.235.74  
 **Related:** `docs/PROJECT-SCOPE.md`, `docs/mysewa-use-case-diagram.png`, `DOCKER.md`
 
 ---
@@ -32,7 +33,7 @@ Faculty of Computer Science and Mathematics (FSKM), Universiti Malaysia Terengga
 ### ABSTRACT (left column, first box)
 
 ```
-MySewa is a responsive web platform for university-area rentals. Students search and apply for rooms; landlords manage listings and applications; administrators oversee users, campus data, and statistics. The system uses role-based dashboards, REST APIs, MySQL, and deposit flows (manual transfer and ToyyibPay sandbox). A three-tier stack (React, Spring Boot, MySQL) is containerized with **Docker Compose** and deployed on a **VPS** for public access.
+MySewa is a responsive web platform for university area rentals near Universiti Malaysia Terengganu (UMT). It also covers Universiti Sultan Zainal Abidin (UniSZA). Students search and apply for rooms; landlords manage listings and applications; administrators oversee users, campus data, and statistics. The system uses role-based dashboards, REST APIs, MySQL, and deposit flows (manual transfer and ToyyibPay sandbox). A three-tier stack (React, Spring Boot, MySQL) is deployed live with Docker Compose on a DigitalOcean VPS (Singapore).
 ```
 
 ---
@@ -60,9 +61,9 @@ No single system combines property search, applications, payments, reviews, and 
 • Design — ERD, REST API, responsive UI  
 • Development — Spring Boot + React modules  
 • Testing — manual functional tests per role  
-• Deployment prep — Docker images, `docker compose` on VPS, SQL backup (see `DOCKER.md`)
+• Deployment — Docker Compose on DigitalOcean VPS (live at http://68.183.235.74)
 
-**Tools:** Visual Paradigm, Git, Maven, npm, MySQL, Docker Desktop
+**Tools:** Visual Paradigm, Git, Maven, npm, MySQL, Docker, DigitalOcean
 
 ---
 
@@ -73,9 +74,9 @@ No single system combines property search, applications, payments, reviews, and 
 | **Frontend** | React (Vite), React Router, responsive CSS |
 | **Backend** | Java Spring Boot, REST API (`/api/v1/...`), JWT |
 | **Database** | MySQL 8 (JPA/Hibernate) |
-| **Deployment** | Docker Compose (Nginx + Spring Boot + MySQL) on VPS |
+| **Deployment** | Docker Compose on DigitalOcean VPS (Nginx + Spring Boot + MySQL) |
 
-**TOOLS / FRAMEWORK LOGOS** — drop in icons for: React, Spring Boot, MySQL, Docker, Nginx.
+**TOOLS / FRAMEWORK LOGOS** — drop in icons for: React, Spring Boot, MySQL, Docker, Nginx, DigitalOcean.
 
 ---
 
@@ -108,7 +109,7 @@ Insert into PowerPoint: *Insert → Pictures →* select the SVG (or export PNG 
 **Short text above screenshots:**
 
 ```
-Prototype covers all seven use cases: property search, rental applications, deposits (manual + ToyyibPay sandbox), reviews, profile, and admin (stats, settings, database explorer). Tested end-to-end on local Docker environment with role-based access.
+Prototype covers all seven use cases: property search, rental applications, deposits (manual + ToyyibPay sandbox), reviews, profile, and admin (stats, settings, database explorer). Deployed and tested on a live DigitalOcean VPS with role-based access.
 ```
 
 **SCREENSHOT 1** — Landing page / property search results  
@@ -119,30 +120,32 @@ Prototype covers all seven use cases: property search, rental applications, depo
 ### CONCLUSION & FUTURE WORK
 
 **Main achievement**  
-Integrated rental management prototype with modern web stack (React, Spring Boot REST API, MySQL), deployed with **Docker Compose on a VPS**.
+Integrated rental management prototype with modern web stack (React, Spring Boot REST API, MySQL), **live-deployed** with Docker Compose on a DigitalOcean VPS.
 
 **Limitation**  
-Web application only (no native mobile app); some profile images remain browser-local; ToyyibPay sandbox needs public callback URL on VPS.
+Web application only (no native mobile app); some profile images remain browser-local; HTTPS and ToyyibPay live callbacks are future enhancements.
 
 **Future work**  
-Mobile application; integrated messaging; enhanced file storage; PDF contracts.
+HTTPS/domain; mobile application; integrated messaging; enhanced file storage; PDF contracts.
 
 ---
 
 ### DEMO QR CODE
 
 **Caption:**  
-`Scan for project repository / demo video / documentation.`
+`Scan for MySewa live prototype`
 
-**URL line:**  
-`https://[your-domain-or-vps-ip]`  
-*(After VPS deploy — public demo link. GitHub is optional for source code.)*
+**URL (generate QR from this):**  
+`http://68.183.235.74`
+
+**Small text under QR (optional):**  
+`Docker Compose · DigitalOcean VPS · Singapore`
 
 ---
 
 ### Panel answer (if asked about deployment)
 
-> “MySewa runs as **Docker Compose** on a **VPS** — Nginx serves the React UI and proxies `/api` to Spring Boot, with MySQL in containers. For PamerKom I can demo on my laptop with Docker, or use the **live VPS URL** if internet is available.”
+> “MySewa is **live** at **http://68.183.235.74**, deployed with **Docker Compose** on a **DigitalOcean VPS** in Singapore — Nginx serves the React UI and proxies `/api` to Spring Boot, with MySQL in containers. I can also demo the same stack on my laptop with Docker if Wi‑Fi is limited at the booth.”
 
 ---
 
@@ -160,13 +163,13 @@ Mobile application; integrated messaging; enhanced file storage; PDF contracts.
 
 ## ABSTRACT
 
-MySewa is a responsive web platform that helps **students** find and apply for rentals near campus, **landlords** manage listings and applications, and **administrators** maintain university reference data and platform oversight.
+MySewa is a responsive web platform for university area rentals near **Universiti Malaysia Terengganu (UMT)**. It also covers **Universiti Sultan Zainal Abidin (UniSZA)**. Students search and apply for rooms; **landlords** manage listings and applications; and **administrators** oversee users, campus data, and statistics.
 
-The system addresses fragmented rental information, limited transparency in applications, and manual payment tracking by providing search and filtering, role-based dashboards, **REST APIs**, MySQL persistence, and integrated deposit flows (manual bank transfer and ToyyibPay sandbox).
+The system uses role-based dashboards, **REST APIs**, MySQL persistence, and integrated deposit flows (manual bank transfer and ToyyibPay sandbox).
 
-The project uses a **three-tier architecture** (React frontend, Spring Boot API, MySQL database). **Production deployment** uses **Docker Compose on a VPS** (Nginx + API + MySQL). The same stack runs locally via `docker compose up` for development and demos.
+The project uses a **three-tier architecture** (React frontend, Spring Boot API, MySQL database). **Production deployment** is **live** on a **DigitalOcean VPS** (Singapore) using **Docker Compose** (Nginx + API + MySQL) at **http://68.183.235.74**. The same stack runs locally via `docker compose up` for development.
 
-This FYP delivers a working **prototype** suitable for evaluation, with a documented path from localhost development to **online deployment** with its own link (not `localhost`).
+This FYP delivers a working **prototype** deployed online with a public URL (not `localhost`).
 
 ---
 
@@ -202,7 +205,7 @@ Design and implement a three-tier web application that supports the seven offici
 | Design | ERD (`docs/mysewa-schema.sql`), REST API design, responsive UI |
 | Development | Spring Boot + React: auth, properties, applications, payments, admin |
 | Testing | Manual functional testing, role-based walkthroughs |
-| Deployment prep | Docker Compose on VPS — `DOCKER.md` |
+| Deployment | Docker Compose on DigitalOcean VPS — **live** at http://68.183.235.74 |
 
 **Tools:** Visual Paradigm (UML), Git, Maven, npm, MySQL, Docker Desktop, phpMyAdmin (for SQL import on hosting).
 
@@ -218,9 +221,10 @@ Design and implement a three-tier web application that supports the seven offici
 | **Payments** | Manual transfer + ToyyibPay (sandbox); `financial_transactions` ledger |
 | **Maps** | Leaflet + OpenStreetMap; admin campus pins |
 | **Local development** | Vite `:5173` → proxy → Spring `:8090` → MySQL |
-| **Packaged demo** | Docker Compose: Nginx + Spring API + MySQL (`docker compose up --build`) |
+| **Packaged demo / deploy** | Docker Compose: Nginx + Spring API + MySQL (`docker compose up -d --build`) |
+| **Hosting** | DigitalOcean Droplet (2 GB RAM, Singapore region) |
 
-**Logos for poster:** React, Spring Boot, MySQL, Docker, Nginx.
+**Logos for poster:** React, Spring Boot, MySQL, Docker, Nginx, DigitalOcean.
 
 ---
 
@@ -259,45 +263,47 @@ Design and implement a three-tier web application that supports the seven offici
 
 ## DEPLOYMENT (important for FYP)
 
-### Chosen strategy
+### Live deployment (completed)
 
-**Production: Docker Compose on a VPS (Linux)**
+**Production: Docker Compose on DigitalOcean VPS**
 
 | Item | Detail |
 |------|--------|
-| **Public URL** | `https://[your-domain]` or `http://[VPS_IP]:[WEB_PORT]` |
+| **Public URL** | **http://68.183.235.74** |
+| **Provider** | DigitalOcean Droplet (Basic, 2 GB RAM, 1 vCPU, Singapore) |
 | **Stack** | Nginx (React) + Spring Boot JAR (API) + MySQL 8 |
-| **Orchestration** | `docker compose up -d` on the VPS |
+| **Orchestration** | `docker compose up -d --build` |
 | **Guide** | `DOCKER.md` at repo root |
 
-**Architecture:** Browser → Nginx (`/api`, `/uploads` proxied) → Spring Boot → MySQL. Same `docker-compose.yml` runs locally and on the VPS (with production `.env`).
+**Architecture:** Browser → Nginx (`/api`, `/uploads` proxied) → Spring Boot → MySQL. Same `docker-compose.yml` runs locally and on the VPS (production `.env` on server).
 
 ### What “deploy” means
 
 | Term | Meaning |
 |------|---------|
-| **Localhost** | Demo on your PC — development / PamerKom backup |
+| **Localhost** | Development / PamerKom backup demo |
 | **GitHub** | Source code — not a running app |
-| **Docker + VPS** | **Yes** — public hosted deployment |
+| **http://68.183.235.74** | **Yes** — live public deployment |
 
 ### Rubric vs demo
 
 | Situation | What to tell panel |
 |-----------|-------------------|
-| **Report / poster** | Deployed with Docker Compose on a VPS at `[your URL]` |
-| **PamerKom booth** | Laptop Docker demo if Wi‑Fi fails; QR points to **VPS URL** when live |
+| **Report / poster** | Live at **http://68.183.235.74** — Docker Compose on DigitalOcean VPS |
+| **PamerKom booth** | QR scans to live URL; laptop Docker demo as backup |
 
-### Go-live checklist (VPS)
+### Deploy checklist (completed)
 
-1. Rent a Linux VPS (Ubuntu recommended); install Docker + Docker Compose.  
-2. Clone repo; copy `.env.example` → `.env` with production secrets.  
-3. Set `APP_BASE_URL` and `APP_PUBLIC_API_URL` to your public HTTPS URL.  
-4. Open firewall ports (80/443 or your `WEB_PORT`).  
-5. `docker compose up -d --build` on the VPS.  
-6. Import or migrate MySQL data if needed.  
-7. Test all roles + CRUD on the public URL.
+- [x] DigitalOcean Droplet created (Singapore, Ubuntu, 2 GB)  
+- [x] Docker + Docker Compose installed  
+- [x] MySewa cloned; production `.env` configured  
+- [x] Firewall port 80 open  
+- [x] `docker compose up -d --build`  
+- [x] Public URL verified in browser  
+- [ ] HTTPS / custom domain (future work)  
+- [ ] ToyyibPay enabled on live server (future work)
 
-See **`DOCKER.md`** for local and VPS commands.
+See **`DOCKER.md`** for local commands and redeploy (`git pull` + `docker compose up -d --build`).
 
 ---
 
@@ -320,25 +326,27 @@ See **`DOCKER.md`** for local and VPS commands.
 3. Student dashboard / myProperty  
 4. Landlord My Properties  
 5. Admin dashboard (charts)  
-6. Deployment diagram or `docker compose ps`  
+6. Browser showing **http://68.183.235.74** (live deploy) or `docker compose ps` on VPS  
 
 ### Testing
 
-Core use cases demonstrable end-to-end on local or Docker environment; role-based access enforced via API.
+Core use cases demonstrable end-to-end on the **live VPS** and local Docker; role-based access enforced via API.
 
 ---
 
 ## DEMO QR CODE
 
-**Choose one for the poster:**
+**Primary (use on poster):**
 
 | Option | URL | When to use |
 |--------|-----|-------------|
-| VPS live demo | `https://[your-domain]` | **Primary** — public deployment |
+| **Live MySewa** | **http://68.183.235.74** | **Primary** — scan for working prototype |
 | GitHub repo | `https://github.com/[USER]/mysewa` | Source code only |
 | Demo video | Google Drive / YouTube | Backup if site is down |
 
-**Caption:** *Scan for project repository / live demo / documentation.*
+**Caption:** *Scan for MySewa live prototype.*
+
+**QR content:** `http://68.183.235.74`
 
 ---
 
@@ -346,19 +354,22 @@ Core use cases demonstrable end-to-end on local or Docker environment; role-base
 
 ### Main achievement
 
-MySewa delivers an integrated student rental management **prototype** with a modern stack (React + Spring REST + MySQL), deployed with **Docker Compose on a VPS**.
+MySewa delivers an integrated student rental management **prototype** with a modern stack (React + Spring REST + MySQL), **live-deployed** at **http://68.183.235.74** using Docker Compose on DigitalOcean.
 
 ### Limitations
 
 - Web application only (no native mobile app)  
-- ToyyibPay live callbacks need public API URL on VPS  
+- HTTP only (HTTPS / custom domain not yet configured)  
+- ToyyibPay sandbox not enabled on live server yet  
 - Some profile images remain browser-local  
 
 ### Future work
 
+- HTTPS and custom domain  
 - Mobile application development  
 - Integrated messaging system  
 - PDF contracts; enhanced file storage on server  
+- ToyyibPay integration on production URL  
 
 ---
 
@@ -371,14 +382,17 @@ MySewa delivers an integrated student rental management **prototype** with a mod
 ## Quick reference — deployment FAQ (for you, not necessarily on poster)
 
 **Q: How is MySewa deployed?**  
-**A:** **Docker Compose on a VPS** — Nginx + Spring Boot + MySQL containers. Same stack runs locally with `docker compose up`.
+**A:** **Docker Compose on a DigitalOcean VPS** (Singapore, 2 GB) — Nginx + Spring Boot + MySQL. **Live URL:** http://68.183.235.74
 
 **Q: Does GitHub count as deployment?**  
 **A:** **No.** GitHub stores code. The VPS runs the live app.
 
 **Q: What should I write on the poster about deployment?**  
-**A:** *“Deployed with Docker Compose (Nginx + Spring Boot + MySQL) on a VPS.”*
+**A:** *“Deployed with Docker Compose (Nginx + Spring Boot + MySQL) on DigitalOcean VPS — http://68.183.235.74”*
+
+**Q: What if the site is down at PamerKom?**  
+**A:** Demo the same stack on your laptop with `docker compose up`, or use a backup demo video.
 
 ---
 
-*Draft for PamerKom 2026. Update author names, VPS URL, and screenshot paths before printing.*
+*Draft for PamerKom 2026. Live demo: http://68.183.235.74 — update author names and screenshot paths before printing.*

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import DashboardShell from '../components/DashboardShell'
-import LandlordMyPropertiesFooter from '../components/LandlordMyPropertiesFooter'
+import { Link, useLocation, useParams } from 'react-router-dom'
+import LandlordLayout from '../components/LandlordLayout'
 import LandlordRentMonthModal from '../components/LandlordRentMonthModal'
 import { useLandlordGuard } from '../hooks/useLandlordGuard'
 import { useToast } from '../context/ToastContext'
@@ -16,8 +15,12 @@ function applyYearPayload(setPaidMonths, setRentMonthRecords, setStudentRentPaym
 }
 
 export default function LandlordRentCalendarPage() {
-  const { applicationId } = useParams()
-  const appId = applicationId != null ? Number(applicationId) : Number.NaN
+  const { applicationId, bookingId } = useParams()
+  const location = useLocation()
+  const appId = applicationId != null ? Number(applicationId) : bookingId != null ? Number(bookingId) : Number.NaN
+  const backTo = location.pathname.startsWith('/dashboard/landlord')
+    ? '/dashboard/landlord/applications'
+    : '/my-properties'
   const { loading: authLoading, error: authError } = useLandlordGuard()
   const { pushToast } = useToast()
 
@@ -252,8 +255,7 @@ export default function LandlordRentCalendarPage() {
   }
 
   return (
-    <DashboardShell properties blend>
-      <div className="my-properties-page-with-footer">
+    <LandlordLayout>
         <article className="my-properties-page">
           <header className="my-property-page-header" aria-labelledby="landlord-rent-tracker-title">
             <div className="my-property-page-header-main">
@@ -263,8 +265,8 @@ export default function LandlordRentCalendarPage() {
               <p className="my-property-page-lead">{headerLead}</p>
             </div>
             <div className="my-property-page-header-actions">
-              <Link to="/my-properties" className="my-property-page-cta">
-                Back to My properties
+              <Link to={backTo} className="my-property-page-cta">
+                {backTo.includes('/applications') ? 'Back to Applications' : 'Back to My properties'}
               </Link>
             </div>
           </header>
@@ -272,15 +274,13 @@ export default function LandlordRentCalendarPage() {
           {pageBody()}
         </article>
 
-        <LandlordMyPropertiesFooter />
-      </div>
-
       {rentModalMonth != null && Number.isFinite(appId) ? (
         <LandlordRentMonthModal
           applicationId={appId}
           year={payYear}
           month={rentModalMonth}
           monthLabel={modalMonthLabel}
+          propertyName={meta?.propertyName}
           defaultAmountHint={meta?.monthlyRent}
           existingRecord={
             modalExisting
@@ -296,6 +296,6 @@ export default function LandlordRentCalendarPage() {
           onSaved={(data) => applyYearPayload(setPaidMonths, setRentMonthRecords, setStudentRentPaymentLogs, data)}
         />
       ) : null}
-    </DashboardShell>
+    </LandlordLayout>
   )
 }

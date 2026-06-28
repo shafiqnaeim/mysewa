@@ -9,6 +9,7 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, Intege
     Optional<UserAccount> findByEmailIgnoreCase(String email);
     Optional<UserAccount> findByEmailVerificationToken(String token);
     Optional<UserAccount> findByPasswordResetToken(String token);
+    Optional<UserAccount> findByIcNumber(String icNumber);
 
     long countByRoleIgnoreCase(String role);
 }

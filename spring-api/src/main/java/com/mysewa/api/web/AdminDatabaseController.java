@@ -1,11 +1,15 @@
 package com.mysewa.api.web;
 
 import com.mysewa.api.domain.Application;
+import com.mysewa.api.domain.FinancialTransaction;
 import com.mysewa.api.domain.PropertyEntity;
+import com.mysewa.api.domain.PropertyReview;
 import com.mysewa.api.domain.UniversityEntity;
 import com.mysewa.api.domain.UserAccount;
 import com.mysewa.api.repo.ApplicationRepository;
+import com.mysewa.api.repo.FinancialTransactionRepository;
 import com.mysewa.api.repo.PropertyRepository;
+import com.mysewa.api.repo.PropertyReviewRepository;
 import com.mysewa.api.repo.UniversityRepository;
 import com.mysewa.api.repo.UserAccountRepository;
 import com.mysewa.api.service.AuthService;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -47,12 +52,16 @@ import java.util.stream.Collectors;
 public class AdminDatabaseController {
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-    private static final Set<String> RESOURCES = Set.of("users", "properties", "applications", "universities");
+    private static final Set<String> RESOURCES = Set.of(
+            "users", "properties", "applications", "payments", "reviews", "universities"
+    );
 
     private final UserAccountRepository userAccountRepository;
     private final PropertyRepository propertyRepository;
     private final ApplicationRepository applicationRepository;
     private final UniversityRepository universityRepository;
+    private final FinancialTransactionRepository financialTransactionRepository;
+    private final PropertyReviewRepository propertyReviewRepository;
     private final AuthService authService;
 
     public AdminDatabaseController(
@@ -60,12 +69,16 @@ public class AdminDatabaseController {
             PropertyRepository propertyRepository,
             ApplicationRepository applicationRepository,
             UniversityRepository universityRepository,
+            FinancialTransactionRepository financialTransactionRepository,
+            PropertyReviewRepository propertyReviewRepository,
             AuthService authService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.propertyRepository = propertyRepository;
         this.applicationRepository = applicationRepository;
         this.universityRepository = universityRepository;
+        this.financialTransactionRepository = financialTransactionRepository;
+        this.propertyReviewRepository = propertyReviewRepository;
         this.authService = authService;
     }
 
@@ -79,7 +92,9 @@ public class AdminDatabaseController {
         List<Map<String, Object>> items = new ArrayList<>();
         items.add(meta("users", "Users", "Read-only grid; change account status from myDashboard."));
         items.add(meta("properties", "Properties", "List, edit status/name, delete when no applications."));
-        items.add(meta("applications", "Applications", "List, edit status, delete rows."));
+        items.add(meta("applications", "Bookings", "List, edit status, delete rows."));
+        items.add(meta("payments", "Payments", "Ledger rows — edit status or delete."));
+        items.add(meta("reviews", "Reviews", "List, edit rating/comment, delete, or add rows."));
         items.add(meta("universities", "Universities", "List, delete; create/update also in mySettings."));
         return ResponseEntity.ok(Map.of("items", items));
     }
@@ -127,6 +142,20 @@ public class AdminDatabaseController {
             case "applications": {
                 Page<Application> pg = applicationRepository.findAllByOrderByCreatedAtDesc(pr);
                 List<Map<String, Object>> rows = pg.getContent().stream().map(this::applicationRow).collect(Collectors.toList());
+                return okPage(pg, rows);
+            }
+            case "payments": {
+                Page<FinancialTransaction> pg = financialTransactionRepository.findAll(
+                        PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "createdAt"))
+                );
+                List<Map<String, Object>> rows = pg.getContent().stream().map(this::paymentRow).collect(Collectors.toList());
+                return okPage(pg, rows);
+            }
+            case "reviews": {
+                Page<PropertyReview> pg = propertyReviewRepository.findAllByOrderByCreatedAtDesc(
+                        PageRequest.of(safePage, safeSize)
+                );
+                List<Map<String, Object>> rows = pg.getContent().stream().map(this::reviewRow).collect(Collectors.toList());
                 return okPage(pg, rows);
             }
             case "universities": {
@@ -185,6 +214,32 @@ public class AdminDatabaseController {
         return m;
     }
 
+    private Map<String, Object> paymentRow(FinancialTransaction tx) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", tx.getId());
+        m.put("applicationId", tx.getApplicationId());
+        m.put("studentId", tx.getStudentId());
+        m.put("propertyId", tx.getPropertyId());
+        m.put("amount", tx.getAmount());
+        m.put("currency", tx.getCurrency());
+        m.put("type", tx.getType());
+        m.put("status", tx.getStatus());
+        m.put("externalRef", tx.getExternalRef());
+        m.put("createdAt", tx.getCreatedAt() != null ? ISO.format(tx.getCreatedAt()) : null);
+        return m;
+    }
+
+    private Map<String, Object> reviewRow(PropertyReview r) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", r.getId());
+        m.put("propertyId", r.getPropertyId());
+        m.put("studentId", r.getStudentId());
+        m.put("rating", r.getRating());
+        m.put("comment", r.getComment());
+        m.put("createdAt", r.getCreatedAt() != null ? ISO.format(r.getCreatedAt()) : null);
+        return m;
+    }
+
     private Map<String, Object> universityRow(UniversityEntity u) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", u.getId());
@@ -235,7 +290,129 @@ public class AdminDatabaseController {
         if ("universities".equals(resource)) {
             return patchUniversity(id, body);
         }
+        if ("payments".equals(resource)) {
+            return patchPayment(id, body);
+        }
+        if ("reviews".equals(resource)) {
+            return patchReview(id, body);
+        }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Unsupported resource."));
+    }
+
+    @PostMapping("/{resource}")
+    public ResponseEntity<?> createRow(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable("resource") String resource,
+            @RequestBody(required = false) Map<String, Object> body
+    ) {
+        try {
+            requireAdmin(authorization);
+        } catch (IllegalArgumentException ex) {
+            return authError(ex);
+        }
+        if (!RESOURCES.contains(resource)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Unknown resource."));
+        }
+        if (body == null) {
+            body = Map.of();
+        }
+        if ("reviews".equals(resource)) {
+            return createReview(body);
+        }
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "message",
+                "Create is only supported for reviews here — use mySettings for universities."
+        ));
+    }
+
+    private ResponseEntity<?> createReview(Map<String, Object> body) {
+        Integer propertyId = toInteger(body.get("propertyId"));
+        Integer studentId = toInteger(body.get("studentId"));
+        if (propertyId == null || studentId == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "propertyId and studentId are required"));
+        }
+        if (!propertyRepository.existsById(propertyId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Property not found"));
+        }
+        if (!userAccountRepository.existsById(studentId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Student not found"));
+        }
+        if (propertyReviewRepository.existsByPropertyIdAndStudentId(propertyId, studentId)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Review already exists for this student and property"));
+        }
+        int rating = toInteger(body.get("rating")) != null ? toInteger(body.get("rating")) : 5;
+        if (rating < 1 || rating > 5) {
+            return ResponseEntity.badRequest().body(Map.of("message", "rating must be between 1 and 5"));
+        }
+        String comment = body.get("comment") == null ? "" : String.valueOf(body.get("comment")).trim();
+        if (!StringUtils.hasText(comment)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "comment is required"));
+        }
+        PropertyReview row = new PropertyReview();
+        row.setPropertyId(propertyId);
+        row.setStudentId(studentId);
+        row.setRating(rating);
+        row.setComment(comment);
+        row.setCreatedAt(LocalDateTime.now());
+        PropertyReview saved = propertyReviewRepository.save(row);
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("item", reviewRow(saved)));
+    }
+
+    private static Integer toInteger(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private ResponseEntity<?> patchPayment(Integer id, Map<String, Object> body) {
+        Optional<FinancialTransaction> opt = financialTransactionRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Payment not found"));
+        }
+        FinancialTransaction tx = opt.get();
+        Object st = body.get("status");
+        if (st == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Field status is required"));
+        }
+        String normalized = String.valueOf(st).trim().toLowerCase(Locale.ROOT);
+        if (!Set.of("pending", "completed", "failed", "refunded").contains(normalized)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "status must be pending, completed, failed, or refunded"));
+        }
+        tx.setStatus(normalized);
+        financialTransactionRepository.save(tx);
+        return ResponseEntity.ok(Map.of("item", paymentRow(tx)));
+    }
+
+    private ResponseEntity<?> patchReview(Integer id, Map<String, Object> body) {
+        Optional<PropertyReview> opt = propertyReviewRepository.findById(id);
+        if (opt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Review not found"));
+        }
+        PropertyReview row = opt.get();
+        if (body.containsKey("rating")) {
+            Integer rating = toInteger(body.get("rating"));
+            if (rating == null || rating < 1 || rating > 5) {
+                return ResponseEntity.badRequest().body(Map.of("message", "rating must be between 1 and 5"));
+            }
+            row.setRating(rating);
+        }
+        if (body.containsKey("comment")) {
+            String comment = body.get("comment") == null ? "" : String.valueOf(body.get("comment")).trim();
+            if (!StringUtils.hasText(comment)) {
+                return ResponseEntity.badRequest().body(Map.of("message", "comment cannot be empty"));
+            }
+            row.setComment(comment);
+        }
+        propertyReviewRepository.save(row);
+        return ResponseEntity.ok(Map.of("item", reviewRow(row)));
     }
 
     private ResponseEntity<?> patchApplication(Integer id, Map<String, Object> body) {
@@ -382,6 +559,20 @@ public class AdminDatabaseController {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "University not found"));
             }
             universityRepository.delete(opt.get());
+            return ResponseEntity.ok(Map.of("message", "Deleted", "id", id));
+        }
+        if ("payments".equals(resource)) {
+            if (!financialTransactionRepository.existsById(id)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Payment not found"));
+            }
+            financialTransactionRepository.deleteById(id);
+            return ResponseEntity.ok(Map.of("message", "Deleted", "id", id));
+        }
+        if ("reviews".equals(resource)) {
+            if (!propertyReviewRepository.existsById(id)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Review not found"));
+            }
+            propertyReviewRepository.deleteById(id);
             return ResponseEntity.ok(Map.of("message", "Deleted", "id", id));
         }
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("message", "Unsupported resource."));

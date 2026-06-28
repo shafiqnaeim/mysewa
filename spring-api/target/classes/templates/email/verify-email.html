@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>Verify your MySewa account</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style type="text/css">
+    body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+    @media only screen and (max-width: 600px) {
+      .wrapper { width: 100% !important; }
+      .content-pad { padding: 24px 20px !important; }
+      .btn { display: block !important; width: 100% !important; box-sizing: border-box !important; }
+    }
+    @media (prefers-color-scheme: dark) {
+      .email-bg { background-color: #1a202c !important; }
+      .card-bg { background-color: #2d3748 !important; }
+      .text-primary { color: #f7fafc !important; }
+      .text-muted { color: #a0aec0 !important; }
+      .link-box { background-color: #1a202c !important; border-color: #4a5568 !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#F7FAFC;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" class="email-bg" style="background-color:#F7FAFC;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" class="wrapper" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;width:100%;">
+          <!-- Header -->
+          <tr>
+            <td align="center" style="padding-bottom:24px;">
+              <p style="margin:0;font-size:22px;font-weight:700;color:#2D3748;line-height:1.3;">
+                <span style="font-size:24px;">&#127968;</span> MySewa
+              </p>
+              <p style="margin:8px 0 0;font-size:14px;color:#A0AEC0;line-height:1.4;">
+                House Rental System for Students
+              </p>
+            </td>
+          </tr>
+          <!-- Card -->
+          <tr>
+            <td class="card-bg content-pad" style="background-color:#FFFFFF;border-radius:16px;border:1px solid #E2E8F0;padding:40px 36px;box-shadow:0 4px 6px rgba(45,55,72,0.06);">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td>
+                    <p class="text-primary" style="margin:0 0 8px;font-size:20px;font-weight:700;color:#2D3748;line-height:1.4;">
+                      Hi {{userName}}, &#128075;
+                    </p>
+                    <p class="text-muted" style="margin:0 0 24px;font-size:15px;color:#4A5568;line-height:1.6;">
+                      Welcome to MySewa! We&apos;re glad you joined our community of students and landlords finding the perfect rental homes near campus.
+                    </p>
+                    <p class="text-primary" style="margin:0 0 28px;font-size:15px;color:#2D3748;line-height:1.6;">
+                      Please verify your email address to complete your registration and start exploring listings.
+                    </p>
+                    <!-- CTA -->
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto 32px;">
+                      <tr>
+                        <td align="center" style="border-radius:9999px;background-color:#E88D5B;">
+                          <a href="{{verificationUrl}}" class="btn" target="_blank" rel="noopener noreferrer"
+                             style="display:inline-block;padding:14px 36px;font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:9999px;background-color:#E88D5B;mso-padding-alt:0;">
+                            <!--[if mso]><i style="letter-spacing:25px;mso-font-width:-100%;mso-text-raise:30pt">&nbsp;</i><![endif]-->
+                            <span style="mso-text-raise:15pt;">Verify Email Address</span>
+                            <!--[if mso]><i style="letter-spacing:25px;mso-font-width:-100%">&nbsp;</i><![endif]-->
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- Fallback link -->
+                    <p class="text-muted" style="margin:0 0 12px;font-size:13px;color:#4A5568;line-height:1.5;">
+                      Or copy and paste this link into your browser:
+                    </p>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                      <tr>
+                        <td class="link-box" style="background-color:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:12px 14px;word-break:break-all;">
+                          <a href="{{verificationUrl}}" style="font-size:12px;color:#E88D5B;text-decoration:none;line-height:1.5;">{{verificationUrl}}</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p class="text-muted" style="margin:24px 0 0;font-size:13px;color:#A0AEC0;line-height:1.5;">
+                      This link will expire in {{expiryHours}} hours. If you didn&apos;t create a MySewa account, you can safely ignore this email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding:28px 16px 0;">
+              <p style="margin:0 0 8px;font-size:13px;color:#4A5568;line-height:1.5;">
+                Questions? Contact us at
+                <a href="mailto:{{supportEmail}}" style="color:#E88D5B;text-decoration:none;font-weight:600;">{{supportEmail}}</a>
+              </p>
+              <p style="margin:0;font-size:12px;color:#A0AEC0;line-height:1.5;">
+                &copy; {{year}} MySewa. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

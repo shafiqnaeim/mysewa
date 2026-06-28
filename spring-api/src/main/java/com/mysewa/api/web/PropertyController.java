@@ -5,6 +5,7 @@ import com.mysewa.api.domain.UserAccount;
 import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.service.AuthService;
 import com.mysewa.api.service.CampusProximityService;
+import com.mysewa.api.service.PropertyService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -41,7 +42,7 @@ import java.util.stream.Collectors;
 import com.mysewa.api.repo.PropertyReviewRepository;
 
 @RestController
-@RequestMapping("/api/v1/properties")
+@RequestMapping({"/api/v1/properties", "/api/properties"})
 @CrossOrigin
 public class PropertyController {
 
@@ -49,17 +50,20 @@ public class PropertyController {
     private final PropertyReviewRepository propertyReviewRepository;
     private final AuthService authService;
     private final CampusProximityService campusProximityService;
+    private final PropertyService propertyService;
 
     public PropertyController(
             PropertyRepository propertyRepository,
             PropertyReviewRepository propertyReviewRepository,
             AuthService authService,
-            CampusProximityService campusProximityService
+            CampusProximityService campusProximityService,
+            PropertyService propertyService
     ) {
         this.propertyRepository = propertyRepository;
         this.propertyReviewRepository = propertyReviewRepository;
         this.authService = authService;
         this.campusProximityService = campusProximityService;
+        this.propertyService = propertyService;
     }
 
     @GetMapping
@@ -102,17 +106,28 @@ public class PropertyController {
     @GetMapping("/search")
     public ResponseEntity<Map<String, Object>> search(
             @RequestParam(required = false) String campus,
+            @RequestParam(required = false) String location,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) Double minPrice,
-            @RequestParam(required = false) Double maxPrice
+            @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) Integer bedrooms
     ) {
         List<PropertyEntity> filtered = propertyRepository.findAll().stream()
                 .filter(p -> !StringUtils.hasText(campus) || campus.equalsIgnoreCase(nullSafe(p.getCampus())))
+                .filter(p -> {
+                    if (!StringUtils.hasText(location)) return true;
+                    String q = location.trim().toLowerCase();
+                    return nullSafe(p.getLocation()).toLowerCase().contains(q)
+                            || nullSafe(p.getCity()).toLowerCase().contains(q)
+                            || nullSafe(p.getState()).toLowerCase().contains(q)
+                            || nullSafe(p.getCampus()).toLowerCase().contains(q);
+                })
                 .filter(p -> !StringUtils.hasText(type) || type.equalsIgnoreCase(nullSafe(p.getType())))
                 .filter(p -> !StringUtils.hasText(status) || status.equalsIgnoreCase(nullSafe(p.getStatus())))
                 .filter(p -> minPrice == null || (p.getPrice() != null && p.getPrice() >= minPrice))
                 .filter(p -> maxPrice == null || (p.getPrice() != null && p.getPrice() <= maxPrice))
+                .filter(p -> bedrooms == null || (p.getCapacity() != null && p.getCapacity() >= bedrooms))
                 .sorted((a, b) -> Integer.compare(b.getId() == null ? 0 : b.getId(), a.getId() == null ? 0 : a.getId()))
                 .collect(Collectors.toList());
 
@@ -120,6 +135,18 @@ public class PropertyController {
         Map<Integer, double[]> reviewStats = reviewStatsForPropertyIds(searchIds);
 
         List<PropertyResponse> items = filtered.stream()
+                .map(PropertyResponse::fromEntity)
+                .peek((dto) -> enrichReviewStats(dto, reviewStats))
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(Map.of("items", items, "count", items.size()));
+    }
+
+    @GetMapping("/landlord/{landlordId}")
+    public ResponseEntity<?> listForLandlord(@PathVariable("landlordId") Integer landlordId) {
+        List<PropertyEntity> rows = propertyRepository.findByLandlordIdOrderByUpdatedAtDesc(landlordId);
+        List<Integer> ids = rows.stream().map(PropertyEntity::getId).filter(Objects::nonNull).collect(Collectors.toList());
+        Map<Integer, double[]> reviewStats = reviewStatsForPropertyIds(ids);
+        List<PropertyResponse> items = rows.stream()
                 .map(PropertyResponse::fromEntity)
                 .peek((dto) -> enrichReviewStats(dto, reviewStats))
                 .collect(Collectors.toList());
@@ -147,13 +174,13 @@ public class PropertyController {
         UserAccount actor;
         try {
             actor = requireLandlord(authorization);
-            validatePropertyRequest(request);
+            propertyService.validatePropertyRequest(request);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
         PropertyEntity entity = new PropertyEntity();
-        request.landlordId = actor.getId();
-        applyRequest(entity, request, campusProximityService);
+        request.setLandlordId(actor.getId());
+        propertyService.applyRequest(entity, request, campusProximityService);
         LocalDateTime now = LocalDateTime.now();
         entity.setCreatedAt(now);
         entity.setUpdatedAt(now);
@@ -175,7 +202,7 @@ public class PropertyController {
         UserAccount actor;
         try {
             actor = requireLandlord(authorization);
-            validatePropertyRequest(request);
+            propertyService.validatePropertyRequest(request);
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
@@ -183,8 +210,8 @@ public class PropertyController {
             if (existing.getLandlordId() != null && !existing.getLandlordId().equals(actor.getId())) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You can only manage your own properties"));
             }
-            request.landlordId = actor.getId();
-            applyRequest(existing, request, campusProximityService);
+            request.setLandlordId(actor.getId());
+            propertyService.applyRequest(existing, request, campusProximityService);
             existing.setUpdatedAt(LocalDateTime.now());
             PropertyEntity saved = propertyRepository.save(existing);
             PropertyResponse dto = PropertyResponse.fromEntity(saved);
@@ -300,46 +327,6 @@ public class PropertyController {
         }
     }
 
-    private static void applyRequest(PropertyEntity entity, PropertyUpsertRequest request, CampusProximityService campusProximity) {
-        entity.setLandlordId(request.landlordId);
-        entity.setName(trimOrNull(request.name));
-        entity.setType(trimOrNull(request.type));
-        entity.setLocation(trimOrNull(request.location));
-        entity.setLatitude(request.latitude);
-        entity.setLongitude(request.longitude);
-
-        if (StringUtils.hasText(request.campus) && StringUtils.hasText(request.distance)) {
-            entity.setCampus(trimOrNull(request.campus));
-            entity.setDistance(trimOrNull(request.distance));
-        } else if (request.latitude != null && request.longitude != null) {
-            var resolved = campusProximity.resolveFromCoordinates(request.latitude, request.longitude);
-            entity.setCampus(resolved.getOrDefault("campus", trimOrNull(request.campus)));
-            entity.setDistance(resolved.getOrDefault("distance", trimOrNull(request.distance)));
-        } else {
-            entity.setCampus(trimOrNull(request.campus));
-            entity.setDistance(trimOrNull(request.distance));
-        }
-
-        entity.setCity(trimOrNull(request.city));
-        entity.setState(trimOrNull(request.state));
-        entity.setPostcode(trimOrNull(request.postcode));
-        entity.setRentalStyle(trimOrNull(request.rentalStyle));
-        entity.setAcceptsMarriedHousehold(request.acceptsMarriedHousehold);
-        entity.setGender(trimOrNull(request.gender));
-        entity.setReligion(trimOrNull(request.religion));
-        entity.setRace(trimOrNull(request.race));
-        entity.setPrice(request.price);
-        entity.setCapacity(request.capacity);
-        entity.setDescription(trimOrNull(request.description));
-        entity.setAmenities(trimOrNull(request.amenities));
-        entity.setImages(trimOrNull(request.images));
-        entity.setStatus(trimOrNull(request.status));
-    }
-
-    private static String trimOrNull(String value) {
-        return StringUtils.hasText(value) ? value.trim() : null;
-    }
-
     private static String nullSafe(String value) {
         return value == null ? "" : value;
     }
@@ -350,21 +337,5 @@ public class PropertyController {
             throw new IllegalArgumentException("Only landlord accounts can manage properties");
         }
         return user;
-    }
-
-    private static void validatePropertyRequest(PropertyUpsertRequest request) {
-        if (!StringUtils.hasText(request.name) || !StringUtils.hasText(request.type)
-                || !StringUtils.hasText(request.location)) {
-            throw new IllegalArgumentException("Name, type and mailing address are required");
-        }
-        if (request.latitude == null || request.longitude == null) {
-            throw new IllegalArgumentException("Map pin location is required");
-        }
-        if (request.price == null || request.price <= 0) {
-            throw new IllegalArgumentException("Price must be greater than 0");
-        }
-        if (request.capacity != null && request.capacity <= 0) {
-            throw new IllegalArgumentException("Capacity must be greater than 0");
-        }
     }
 }

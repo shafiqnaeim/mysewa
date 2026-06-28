@@ -1,27 +1,24 @@
 import { useMemo, useState } from 'react'
-import { propertyStatusLabel } from '../utils/propertyDisplay'
+import { dateToYMD } from '../utils/bookingDates'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-function stripTime(d) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+function stripTime(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
-function normalizeStatus(status) {
+function normalizeListingStatus(status) {
   const s = String(status || 'available').toLowerCase()
-  if (s === 'rented' || s === 'booked') return 'occupied'
-  if (s === 'maintenance') return 'maintenance'
+  if (s === 'rented' || s === 'booked' || s === 'occupied') return 'occupied'
+  if (s === 'maintenance' || s === 'unavailable') return 'unavailable'
   return 'available'
 }
 
 function calendarAnchorMonday(year, month) {
   const first = new Date(year, month, 1)
-  const dow = first.getDay()
-  const offsetMon0 = (dow + 6) % 7
+  const offset = (first.getDay() + 6) % 7
   const anchor = new Date(first)
-  anchor.setDate(first.getDate() - offsetMon0)
+  anchor.setDate(first.getDate() - offset)
   return anchor
 }
 
@@ -29,208 +26,202 @@ function monthTitle(year, month) {
   return new Date(year, month, 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })
 }
 
-/** One tile in year overview (listing status + coarse past/future for “available”). */
-function getMonthTileKind(year, monthIndex, mode, todayStrip) {
-  if (mode === 'occupied') return 'occupied'
-  if (mode === 'maintenance') return 'maintenance'
-  const last = stripTime(new Date(year, monthIndex + 1, 0))
-  if (last < todayStrip) return 'past'
+/** Mock per-day availability — all future days available unless listing status overrides. */
+function getDayAvailability(date, inMonth, listingMode, today) {
+  if (!inMonth) return 'other'
+
+  const day = stripTime(date)
+  if (day < today) return 'past'
+
+  if (listingMode === 'occupied') return 'occupied'
+  if (listingMode === 'unavailable') return 'unavailable'
+
   return 'available'
 }
 
-/**
- * Availability calendar: **Year** (compact 12 months) or **Month** (day grid).
- * Shading follows listing {@code status} until per-day data exists.
- */
-export default function PropertyAvailabilityCalendar({ status }) {
-  const mode = useMemo(() => normalizeStatus(status), [status])
-  const statusLabel = propertyStatusLabel(status)
+const DAY_CELL_CLASS = {
+  available:
+    'border-green-200 bg-green-100 text-green-800 hover:bg-green-200 focus-visible:ring-[#E88D5B]',
+  occupied: 'border-red-200 bg-red-100 text-red-800 hover:bg-red-200 focus-visible:ring-[#E88D5B]',
+  unavailable:
+    'border-[#CBD5E0] bg-[#E2E8F0] text-[#718096] hover:bg-[#CBD5E0] focus-visible:ring-[#E88D5B]',
+  past: 'border-[#EDF2F7] bg-[#F7FAFC] text-[#A0AEC0] cursor-default',
+  other: 'border-transparent bg-transparent text-[#E2E8F0] pointer-events-none',
+}
 
-  const [zoom, setZoom] = useState('year')
+const LEGEND = [
+  { key: 'available', label: 'Available', className: 'bg-green-100 border-green-200' },
+  { key: 'occupied', label: 'Occupied', className: 'bg-red-100 border-red-200' },
+  { key: 'unavailable', label: 'Unavailable', className: 'bg-[#E2E8F0] border-[#CBD5E0]' },
+  { key: 'past', label: 'Past', className: 'bg-[#F7FAFC] border-[#EDF2F7]' },
+]
+
+export default function PropertyAvailabilityCalendar({
+  status,
+  onDaySelect,
+  moveInYmd = '',
+  moveOutYmd = '',
+  hideFooterNote = false,
+}) {
+  const listingMode = useMemo(() => normalizeListingStatus(status), [status])
+
   const [cursor, setCursor] = useState(() => {
-    const n = new Date()
-    return { y: n.getFullYear(), m: n.getMonth() }
+    const now = new Date()
+    return { year: now.getFullYear(), month: now.getMonth() }
   })
 
-  const yearTiles = useMemo(() => {
-    const todayStrip = stripTime(new Date())
-    const now = new Date()
-    return MONTH_LABELS.map((label, monthIndex) => {
-      const kind = getMonthTileKind(cursor.y, monthIndex, mode, todayStrip)
-      const isThisMonth = cursor.y === now.getFullYear() && monthIndex === now.getMonth()
-      return { label, monthIndex, kind, isThisMonth }
-    })
-  }, [cursor.y, mode])
+  const [selectedDate, setSelectedDate] = useState(() => stripTime(new Date()))
+
+  const today = useMemo(() => stripTime(new Date()), [])
 
   const cells = useMemo(() => {
-    const anchor = calendarAnchorMonday(cursor.y, cursor.m)
+    const anchor = calendarAnchorMonday(cursor.year, cursor.month)
     const out = []
-    const today = stripTime(new Date())
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(anchor)
-      d.setDate(anchor.getDate() + i)
-      const inMonth = d.getMonth() === cursor.m && d.getFullYear() === cursor.y
-      const dStrip = stripTime(d)
-      const isToday = dStrip.getTime() === today.getTime()
-      const isPast = dStrip < today
 
-      let dayKind = 'other'
-      if (inMonth) {
-        if (mode === 'occupied') dayKind = 'occupied'
-        else if (mode === 'maintenance') dayKind = 'maintenance'
-        else if (isPast) dayKind = 'past'
-        else dayKind = 'available'
-      }
+    for (let i = 0; i < 42; i += 1) {
+      const date = new Date(anchor)
+      date.setDate(anchor.getDate() + i)
+      const inMonth = date.getMonth() === cursor.month && date.getFullYear() === cursor.year
+      const dayKey = getDayAvailability(date, inMonth, listingMode, today)
+      const isToday = stripTime(date).getTime() === today.getTime()
+      const ymd = dateToYMD(stripTime(date))
+      const inLeaseRange =
+        moveInYmd &&
+        moveOutYmd &&
+        ymd >= moveInYmd &&
+        ymd <= moveOutYmd
+      const isMoveIn = moveInYmd && ymd === moveInYmd
+      const isMoveOut = moveOutYmd && ymd === moveOutYmd
+      const isSelected =
+        (onDaySelect && (isMoveIn || isMoveOut)) ||
+        (!onDaySelect && stripTime(date).getTime() === selectedDate.getTime())
 
-      out.push({ date: d, inMonth, isToday, dayKind })
+      out.push({ date, inMonth, dayKey, isToday, isSelected, ymd, inLeaseRange, isMoveIn, isMoveOut })
     }
+
     return out
-  }, [cursor.y, cursor.m, mode])
+  }, [cursor.year, cursor.month, listingMode, today, selectedDate, onDaySelect, moveInYmd, moveOutYmd])
 
   function prevMonth() {
-    setCursor((c) => {
-      const nm = c.m === 0 ? 11 : c.m - 1
-      const ny = c.m === 0 ? c.y - 1 : c.y
-      return { y: ny, m: nm }
+    setCursor((current) => {
+      const month = current.month === 0 ? 11 : current.month - 1
+      const year = current.month === 0 ? current.year - 1 : current.year
+      return { year, month }
     })
   }
 
   function nextMonth() {
-    setCursor((c) => {
-      const nm = c.m === 11 ? 0 : c.m + 1
-      const ny = c.m === 11 ? c.y + 1 : c.y
-      return { y: ny, m: nm }
+    setCursor((current) => {
+      const month = current.month === 11 ? 0 : current.month + 1
+      const year = current.month === 11 ? current.year + 1 : current.year
+      return { year, month }
     })
   }
 
-  function prevYear() {
-    setCursor((c) => ({ ...c, y: c.y - 1 }))
+  function handleDayClick(cell) {
+    if (!cell.inMonth || cell.dayKey === 'past') return
+    if (onDaySelect) {
+      onDaySelect(cell.ymd)
+      return
+    }
+    setSelectedDate(stripTime(cell.date))
   }
 
-  function nextYear() {
-    setCursor((c) => ({ ...c, y: c.y + 1 }))
-  }
-
-  function openMonth(monthIndex) {
-    setCursor((c) => ({ ...c, m: monthIndex }))
-    setZoom('month')
-  }
-
-  const legend = [
-    { key: 'available', label: 'Open' },
-    { key: 'occupied', label: 'Occupied / not available' },
-    { key: 'maintenance', label: 'Unavailable' },
-    { key: 'past', label: 'Past' },
-  ]
+  const selectedLabel = onDaySelect
+    ? [
+        moveInYmd ? `Move-in: ${moveInYmd}` : null,
+        moveOutYmd ? `Move-out: ${moveOutYmd}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || 'Click a date to set move-in, then move-out'
+    : selectedDate.toLocaleDateString(undefined, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })
 
   return (
-    <div className={`pv-availability-cal${zoom === 'year' ? ' pv-availability-cal--year-zoom' : ' pv-availability-cal--month-zoom'}`}>
-      <div className="pv-availability-cal__toolbar">
-        <div className="pv-availability-cal__zoom-toggle" role="group" aria-label="Calendar scale">
-          <button
-            type="button"
-            className={`pv-availability-cal__zoom-btn${zoom === 'year' ? ' pv-availability-cal__zoom-btn--on' : ''}`}
-            aria-pressed={zoom === 'year'}
-            onClick={() => setZoom('year')}
-          >
-            Year
-          </button>
-          <button
-            type="button"
-            className={`pv-availability-cal__zoom-btn${zoom === 'month' ? ' pv-availability-cal__zoom-btn--on' : ''}`}
-            aria-pressed={zoom === 'month'}
-            onClick={() => setZoom('month')}
-          >
-            Month
-          </button>
-        </div>
+    <div className="rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={prevMonth}
+          className="rounded-lg border border-[#E2E8F0] bg-[#F7FAFC] px-3 py-2 text-sm font-semibold text-[#2D3748] transition hover:bg-[#EDF2F7]"
+          aria-label="Previous month"
+        >
+          ← Prev
+        </button>
+        <h3 className="text-center text-lg font-bold text-[#2D3748]">
+          {monthTitle(cursor.year, cursor.month)}
+        </h3>
+        <button
+          type="button"
+          onClick={nextMonth}
+          className="rounded-lg border border-[#E2E8F0] bg-[#F7FAFC] px-3 py-2 text-sm font-semibold text-[#2D3748] transition hover:bg-[#EDF2F7]"
+          aria-label="Next month"
+        >
+          Next →
+        </button>
       </div>
 
-      {zoom === 'year' ? (
-        <>
-          <div className="pv-availability-cal__head">
-            <button type="button" className="pv-availability-cal__nav" onClick={prevYear} aria-label="Previous year">
-              ‹
-            </button>
-            <h4 className="pv-availability-cal__title">{cursor.y}</h4>
-            <button type="button" className="pv-availability-cal__nav" onClick={nextYear} aria-label="Next year">
-              ›
-            </button>
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2" aria-label="Availability calendar">
+        {WEEKDAYS.map((label) => (
+          <div
+            key={label}
+            className="pb-1 text-center text-xs font-semibold uppercase tracking-wide text-[#A0AEC0]"
+          >
+            {label}
           </div>
-          <p className="pv-availability-cal__status-line">
-            Listing status: <strong>{statusLabel}</strong> — tap a month to open the day view.
-          </p>
-          <div className="pv-availability-cal__year-grid" aria-label="Availability by month">
-            {yearTiles.map(({ label, monthIndex, kind, isThisMonth }) => (
-              <button
-                key={label}
-                type="button"
-                className={[
-                  'pv-availability-cal__month-tile',
-                  `pv-availability-cal__month-tile--${kind}`,
-                  isThisMonth ? 'pv-availability-cal__month-tile--current' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => openMonth(monthIndex)}
-              >
-                <span className="pv-availability-cal__month-tile-label">{label}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="pv-availability-cal__head">
-            <button type="button" className="pv-availability-cal__nav" onClick={prevMonth} aria-label="Previous month">
-              ‹
-            </button>
-            <h4 className="pv-availability-cal__title">{monthTitle(cursor.y, cursor.m)}</h4>
-            <button type="button" className="pv-availability-cal__nav" onClick={nextMonth} aria-label="Next month">
-              ›
-            </button>
-          </div>
-          <p className="pv-availability-cal__status-line">
-            Listing status: <strong>{statusLabel}</strong>
-          </p>
-          <div className="pv-availability-cal__grid" aria-label="Availability by day">
-            {WEEKDAYS.map((w) => (
-              <div key={w} className="pv-availability-cal__dow">
-                {w}
-              </div>
-            ))}
-            {cells.map(({ date, inMonth, isToday, dayKind }) => (
-              <div
-                key={`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
-                className={[
-                  'pv-availability-cal__cell',
-                  inMonth ? 'pv-availability-cal__cell--in-month' : 'pv-availability-cal__cell--out',
-                  `pv-availability-cal__cell--${dayKind}`,
-                  isToday ? 'pv-availability-cal__cell--today' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                aria-label={`${date.toDateString()}, ${dayKind}`}
-              >
-                <span className="pv-availability-cal__num">{date.getDate()}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+        ))}
 
-      <ul className="pv-availability-cal__legend" aria-label="Legend">
-        {legend.map(({ key, label }) => (
-          <li key={key}>
-            <span className={`pv-availability-cal__swatch pv-availability-cal__swatch--${key}`} aria-hidden="true" />
-            <span>{label}</span>
+        {cells.map((cell) => {
+          const clickable = cell.inMonth && cell.dayKey !== 'past' && cell.dayKey !== 'other'
+          return (
+            <button
+              key={`${cell.date.getFullYear()}-${cell.date.getMonth()}-${cell.date.getDate()}`}
+              type="button"
+              disabled={!clickable}
+              onClick={() => handleDayClick(cell)}
+              className={[
+                'flex h-9 items-center justify-center rounded-lg border text-sm font-medium transition sm:h-10',
+                DAY_CELL_CLASS[cell.dayKey] || DAY_CELL_CLASS.other,
+                cell.inLeaseRange && cell.dayKey === 'available' ? 'bg-[#F3F0FF] border-[#6C2BD9]/30' : '',
+                cell.isToday ? 'ring-2 ring-[#F59E0B] ring-offset-1' : '',
+                cell.isSelected && clickable ? 'ring-2 ring-[#6C2BD9] ring-offset-1 font-bold' : '',
+                cell.isMoveIn || cell.isMoveOut ? 'bg-[#6C2BD9] text-white border-[#6C2BD9]' : '',
+                clickable ? 'cursor-pointer' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              aria-label={`${cell.date.toDateString()}, ${cell.dayKey}`}
+              aria-pressed={cell.isSelected}
+            >
+              {cell.date.getDate()}
+            </button>
+          )
+        })}
+      </div>
+
+      <ul className="mt-5 flex flex-wrap gap-3 text-xs text-[#4A5568]" aria-label="Calendar legend">
+        {LEGEND.map((item) => (
+          <li key={item.key} className="inline-flex items-center gap-2">
+            <span className={`h-3.5 w-3.5 rounded border ${item.className}`} aria-hidden="true" />
+            {item.label}
           </li>
         ))}
       </ul>
-      <p className="pv-availability-cal__hint">
-        Shading follows this listing&apos;s status only. Exact move-in dates are not stored here yet — check with the
-        landlord to confirm.
+
+      <p className="mt-4 rounded-lg border border-[#E2E8F0] bg-[#F7FAFC] px-4 py-3 text-sm text-[#4A5568]">
+        <span className="font-semibold text-[#2D3748]">Selected: </span>
+        {selectedLabel}
       </p>
+
+      {hideFooterNote ? null : (
+        <p className="mt-3 text-xs text-[#A0AEC0]">
+          Showing mock availability (all open days marked available). Per-day booking data can be wired later.
+        </p>
+      )}
     </div>
   )
 }

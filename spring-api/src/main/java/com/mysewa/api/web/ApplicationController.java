@@ -9,11 +9,17 @@ import com.mysewa.api.repo.FinancialTransactionRepository;
 import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.repo.UserAccountRepository;
 import com.mysewa.api.payment.DepositCalculator;
+import com.mysewa.api.payment.DepositInstructionsBuilder;
 import com.mysewa.api.payment.DepositType;
 import com.mysewa.api.payment.PaymentProperties;
 import com.mysewa.api.payment.ToyyibPayService;
+import com.mysewa.api.service.ApplicationService;
 import com.mysewa.api.service.AuthService;
+import com.mysewa.api.service.EmailService;
 import com.mysewa.api.service.IcCryptoService;
+import com.mysewa.api.service.NotificationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -49,9 +55,11 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/v1/applications")
+@RequestMapping({"/api/v1/applications", "/api/v1/bookings", "/api/bookings"})
 @CrossOrigin
 public class ApplicationController {
+
+    private static final Logger log = LoggerFactory.getLogger(ApplicationController.class);
 
     private final ApplicationRepository applicationRepository;
     private final PropertyRepository propertyRepository;
@@ -61,6 +69,9 @@ public class ApplicationController {
     private final PaymentProperties paymentProperties;
     private final ToyyibPayService toyyibPayService;
     private final IcCryptoService icCryptoService;
+    private final NotificationService notificationService;
+    private final EmailService emailService;
+    private final ApplicationService applicationService;
 
     public ApplicationController(
             ApplicationRepository applicationRepository,
@@ -70,7 +81,10 @@ public class ApplicationController {
             AuthService authService,
             PaymentProperties paymentProperties,
             ToyyibPayService toyyibPayService,
-            IcCryptoService icCryptoService
+            IcCryptoService icCryptoService,
+            NotificationService notificationService,
+            EmailService emailService,
+            ApplicationService applicationService
     ) {
         this.applicationRepository = applicationRepository;
         this.propertyRepository = propertyRepository;
@@ -80,6 +94,9 @@ public class ApplicationController {
         this.paymentProperties = paymentProperties;
         this.toyyibPayService = toyyibPayService;
         this.icCryptoService = icCryptoService;
+        this.notificationService = notificationService;
+        this.emailService = emailService;
+        this.applicationService = applicationService;
     }
 
     private static final double AVG_DAYS_PER_MONTH = 365.25 / 12.0;
@@ -183,13 +200,25 @@ public class ApplicationController {
 
         try {
             Application saved = applicationRepository.save(app);
-            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("item", ApplicationResponse.from(saved, property, student, icCryptoService)));
+            if (property.getLandlordId() != null) {
+                notificationService.notifyUser(
+                        property.getLandlordId(),
+                        "New rental application",
+                        student.getFullName() + " applied for " + nullSafe(property.getName())
+                );
+            }
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("item", enrichResponse(
+                    ApplicationResponse.from(saved, property, student, icCryptoService),
+                    saved,
+                    property,
+                    false
+            )));
         } catch (DataIntegrityViolationException ex) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "You have already applied for this listing"));
         }
     }
 
-    @GetMapping("/for-landlord")
+    @GetMapping({"/for-landlord", "/landlord"})
     public ResponseEntity<?> listForLandlord(@RequestHeader(value = "Authorization", required = false) String authorization) {
         UserAccount landlord;
         try {
@@ -224,15 +253,7 @@ public class ApplicationController {
             PropertyEntity p = byId.get(a.getPropertyId());
             UserAccount studentUser = userAccountRepository.findById(a.getStudentId()).orElse(null);
             ApplicationResponse row = ApplicationResponse.from(a, p, studentUser, icCryptoService);
-            row.depositPaid = paidAppIds.contains(a.getId());
-            if (p != null) {
-                String st = nullSafe(a.getStatus()).toLowerCase();
-                if ("accepted".equals(st)) {
-                    row.depositAmountSuggested = DepositCalculator.resolveForApplication(a, p);
-                } else if ("pending".equals(st)) {
-                    row.depositAmountSuggested = DepositCalculator.compute(p);
-                }
-            }
+            ApplicationDepositEnricher.apply(row, a, p, paidAppIds.contains(a.getId()));
             items.add(row);
         }
 
@@ -242,7 +263,7 @@ public class ApplicationController {
         return ResponseEntity.ok(body);
     }
 
-    @GetMapping("/for-student")
+    @GetMapping({"/for-student", "/student"})
     public ResponseEntity<?> listForStudent(@RequestHeader(value = "Authorization", required = false) String authorization) {
         UserAccount student;
         try {
@@ -262,13 +283,7 @@ public class ApplicationController {
         for (Application a : applications) {
             PropertyEntity property = propertyRepository.findById(a.getPropertyId()).orElse(null);
             ApplicationResponse r = ApplicationResponse.from(a, property, student, icCryptoService);
-            r.depositPaid = paidAppIds.contains(a.getId());
-            String st = nullSafe(a.getStatus()).toLowerCase();
-            if ("accepted".equals(st)) {
-                r.depositAmountSuggested = DepositCalculator.resolveForApplication(a, property);
-            } else if ("pending".equals(st) && property != null) {
-                r.depositAmountSuggested = DepositCalculator.compute(property);
-            }
+            ApplicationDepositEnricher.apply(r, a, property, paidAppIds.contains(a.getId()));
             items.add(r);
         }
 
@@ -276,6 +291,46 @@ public class ApplicationController {
         body.put("items", items);
         body.put("count", items.size());
         return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getById(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable("id") Integer applicationId
+    ) {
+        UserAccount actor;
+        try {
+            actor = authService.me(authorization);
+        } catch (IllegalArgumentException ex) {
+            return unauthorizedOrMessage(ex);
+        }
+        Optional<Application> appOpt = applicationRepository.findById(applicationId);
+        if (appOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Application not found"));
+        }
+        Application app = appOpt.get();
+        PropertyEntity property = propertyRepository.findById(app.getPropertyId()).orElse(null);
+        UserAccount student = userAccountRepository.findById(app.getStudentId()).orElse(null);
+        String role = actor.getRole() != null ? actor.getRole().toLowerCase(Locale.ROOT) : "";
+        if ("student".equals(role)) {
+            if (actor.getId() == null || !actor.getId().equals(app.getStudentId())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Access denied"));
+            }
+        } else if ("landlord".equals(role)) {
+            if (property == null || property.getLandlordId() == null || !property.getLandlordId().equals(actor.getId())) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Access denied"));
+            }
+        } else if (!"admin".equals(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Access denied"));
+        }
+        ApplicationResponse item = ApplicationResponse.from(app, property, student, icCryptoService);
+        ApplicationDepositEnricher.apply(
+                item,
+                app,
+                property,
+                financialTransactionRepository.hasCompletedDeposit(applicationId)
+        );
+        return ResponseEntity.ok(Map.of("item", item));
     }
 
     @Transactional
@@ -299,11 +354,11 @@ public class ApplicationController {
         if (rawStatus.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("message", "status is required"));
         }
-        String normalized = rawStatus.toLowerCase();
-        if (!normalized.equals("accepted") && !normalized.equals("rejected")) {
+        String normalized = applicationService.normalizeLandlordDecisionStatus(rawStatus);
+        if (!applicationService.isAllowedLandlordDecision(normalized)) {
             return ResponseEntity.badRequest().body(Map.of(
                     "message",
-                    "status must be accepted or rejected"
+                    "status must be accepted or rejected (aliases: approved, rejected)"
             ));
         }
 
@@ -340,31 +395,76 @@ public class ApplicationController {
         }
 
         if ("accepted".equals(normalized)) {
-            if (request.getDepositAmount() == null) {
-                return ResponseEntity.badRequest().body(Map.of("message", "depositAmount is required when accepting an application"));
+            BigDecimal dep = request != null ? request.getDepositAmount() : null;
+            if (dep == null) {
+                dep = DepositCalculator.compute(property);
+            } else {
+                dep = dep.setScale(2, RoundingMode.HALF_UP);
             }
-            BigDecimal dep = request.getDepositAmount().setScale(2, RoundingMode.HALF_UP);
             if (!DepositCalculator.isValidLandlordDeposit(dep)) {
                 return ResponseEntity.badRequest().body(Map.of(
                         "message",
                         "depositAmount must be between 100 and 5000 MYR (inclusive)."
                 ));
             }
-            app.setLandlordDepositAmount(dep);
-        } else {
-            app.setLandlordDepositAmount(null);
         }
 
-        app.setStatus(normalized);
+        applicationService.applyLandlordDecision(app, normalized, request, property);
         app.setUpdatedAt(LocalDateTime.now());
         Application saved = applicationRepository.save(app);
         applicationRepository.flush();
 
         UserAccount studentUser = userAccountRepository.findById(saved.getStudentId()).orElse(null);
-        ApplicationResponse item = ApplicationResponse.from(saved, property, studentUser, icCryptoService);
-        item.depositPaid = financialTransactionRepository.hasCompletedDeposit(applicationId);
+        ApplicationResponse item = enrichResponse(
+                ApplicationResponse.from(saved, property, studentUser, icCryptoService),
+                saved,
+                property,
+                financialTransactionRepository.hasCompletedDeposit(applicationId)
+        );
         if ("accepted".equals(normalized)) {
-            item.depositAmountSuggested = DepositCalculator.resolveForApplication(saved, property);
+            String propertyName = nullSafe(property.getName());
+            BigDecimal depositDue = item.depositAmount != null ? item.depositAmount : DepositCalculator.resolveForApplication(saved, property);
+            String notifyBody = "Your application for " + propertyName + " has been approved! Pay the deposit of RM "
+                    + depositDue.setScale(2, RoundingMode.HALF_UP) + " to confirm your booking.";
+            if (saved.getLandlordMessage() != null && !saved.getLandlordMessage().isBlank()) {
+                notifyBody += " Message from landlord: " + saved.getLandlordMessage().trim();
+            }
+            try {
+                notificationService.notifyUser(
+                        saved.getStudentId(),
+                        "Booking approved",
+                        notifyBody
+                );
+            } catch (Exception ex) {
+                log.warn("Approval notification failed for application {}: {}", saved.getId(), ex.getMessage());
+            }
+            if (studentUser != null && studentUser.getEmail() != null && !studentUser.getEmail().isBlank()) {
+                try {
+                    emailService.sendBookingApprovedEmail(
+                            studentUser.getEmail(),
+                            studentUser.getFullName(),
+                            propertyName,
+                            depositDue,
+                            trimTrailingSlash(paymentProperties.getFrontReturnBase()) + "/dashboard/student/bookings"
+                    );
+                } catch (Exception ex) {
+                    log.warn("Approval email failed for application {}: {}", saved.getId(), ex.getMessage());
+                }
+            }
+        } else if ("rejected".equals(normalized)) {
+            String notifyBody = "Your application for " + nullSafe(property.getName()) + " was not accepted.";
+            if (saved.getLandlordMessage() != null && !saved.getLandlordMessage().isBlank()) {
+                notifyBody += " Message from landlord: " + saved.getLandlordMessage().trim();
+            }
+            try {
+                notificationService.notifyUser(
+                        saved.getStudentId(),
+                        "Application declined",
+                        notifyBody
+                );
+            } catch (Exception ex) {
+                log.warn("Rejection notification failed for application {}: {}", saved.getId(), ex.getMessage());
+            }
         }
         return ResponseEntity.ok(Map.of("item", item));
     }
@@ -420,9 +520,12 @@ public class ApplicationController {
         tx.setCreatedAt(now);
         FinancialTransaction savedTx = financialTransactionRepository.save(tx);
 
-        ApplicationResponse item = ApplicationResponse.from(app, property, student, icCryptoService);
-        item.depositPaid = true;
-        item.depositAmountSuggested = amount;
+        ApplicationResponse item = enrichResponse(
+                ApplicationResponse.from(app, property, student, icCryptoService),
+                app,
+                property,
+                true
+        );
 
         Map<String, Object> txMap = new LinkedHashMap<>();
         txMap.put("id", savedTx.getId());
@@ -438,6 +541,50 @@ public class ApplicationController {
         body.put("transaction", txMap);
         body.put("item", item);
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    @GetMapping("/{id}/deposit-instructions")
+    public ResponseEntity<?> depositInstructions(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable("id") Integer applicationId
+    ) {
+        UserAccount student;
+        try {
+            student = requireStudent(authorization);
+        } catch (IllegalArgumentException ex) {
+            return unauthorizedOrMessage(ex);
+        }
+        if (applicationId == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Application id is required"));
+        }
+        Optional<Application> appOpt = applicationRepository.findById(applicationId);
+        if (appOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Application not found"));
+        }
+        Application app = appOpt.get();
+        if (!app.getStudentId().equals(student.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "This application belongs to another student"));
+        }
+        String appStatus = nullSafe(app.getStatus()).toLowerCase(Locale.ROOT);
+        if (!"accepted".equals(appStatus)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "message",
+                    "Payment details are only available after your booking is approved."
+            ));
+        }
+        PropertyEntity property = propertyRepository.findById(app.getPropertyId()).orElse(null);
+        UserAccount landlord = property != null && property.getLandlordId() != null
+                ? userAccountRepository.findById(property.getLandlordId()).orElse(null)
+                : null;
+        BigDecimal depositAmount = DepositCalculator.resolveForApplication(app, property);
+        Map<String, Object> body = DepositInstructionsBuilder.build(
+                app,
+                property,
+                landlord,
+                depositAmount,
+                paymentProperties.getToyyibpay().isConfigured()
+        );
+        return ResponseEntity.ok(body);
     }
 
     @PostMapping("/{id}/deposit/manual")
@@ -500,9 +647,12 @@ public class ApplicationController {
         tx.setCreatedAt(now);
         financialTransactionRepository.save(tx);
 
-        ApplicationResponse item = ApplicationResponse.from(app, property, student, icCryptoService);
-        item.depositPaid = true;
-        item.depositAmountSuggested = amount;
+        ApplicationResponse item = enrichResponse(
+                ApplicationResponse.from(app, property, student, icCryptoService),
+                app,
+                property,
+                true
+        );
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("item", item, "channel", channel));
     }
 
@@ -654,11 +804,23 @@ public class ApplicationController {
 
         Optional<PropertyEntity> propOpt = propertyRepository.findById(app.getPropertyId());
         PropertyEntity property = propOpt.orElse(null);
-        BigDecimal amount = property != null ? DepositCalculator.resolveForApplication(app, property) : null;
-        ApplicationResponse item = ApplicationResponse.from(app, property, student, icCryptoService);
-        item.depositPaid = financialTransactionRepository.hasCompletedDeposit(applicationId);
-        item.depositAmountSuggested = amount;
+        ApplicationResponse item = enrichResponse(
+                ApplicationResponse.from(app, property, student, icCryptoService),
+                app,
+                property,
+                financialTransactionRepository.hasCompletedDeposit(applicationId)
+        );
         return ResponseEntity.ok(Map.of("item", item));
+    }
+
+    private static ApplicationResponse enrichResponse(
+            ApplicationResponse row,
+            Application app,
+            PropertyEntity property,
+            boolean depositPaid
+    ) {
+        ApplicationDepositEnricher.apply(row, app, property, depositPaid);
+        return row;
     }
 
     private static String trimTrailingSlash(String url) {

@@ -1,7 +1,7 @@
 package com.mysewa.api.web.auth;
 
 /**
- * Self-service profile update (student / landlord). Email, password, role, and IC are not changed here.
+ * Self-service profile update (student / landlord / admin). Email, password, role, and IC are not changed here.
  */
 public class ProfileUpdateRequest {
     /** Required — combined display name (trimmed). */

@@ -13,6 +13,9 @@ public class ApplicationStatusUpdateRequest {
     /** Required when {@code status} is accepted — deposit in MYR (prototype bounds RM 100–5000). */
     private BigDecimal depositAmount;
 
+    /** Optional message to the student when approving or rejecting (max 500 chars). */
+    private String message;
+
     public String getStatus() {
         return status;
     }
@@ -27,5 +30,13 @@ public class ApplicationStatusUpdateRequest {
 
     public void setDepositAmount(BigDecimal depositAmount) {
         this.depositAmount = depositAmount;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 }

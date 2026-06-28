@@ -1,6 +1,9 @@
 package com.mysewa.api.web;
 
 import com.mysewa.api.domain.PropertyEntity;
+import com.mysewa.api.payment.DepositCalculator;
+
+import java.math.BigDecimal;
 
 /**
  * Narrow JSON payload for listing cards — expand as migration grows.
@@ -20,6 +23,7 @@ public class PropertyResponse {
     private String state;
     private String postcode;
     private Double price;
+    private BigDecimal deposit;
     private Integer capacity;
     private String description;
     private String amenities;
@@ -31,6 +35,16 @@ public class PropertyResponse {
     private String race;
     private String thumbnailPath;
     private String status;
+
+    private String contactPhone;
+    private String contactEmail;
+    private String whatsappNumber;
+    private String paymentMethods;
+    private String paymentDueDate;
+    private String bankName;
+    private String accountNumber;
+    private String accountHolder;
+    private String qrCodeUrl;
 
     private Double averageRating;
     private Long reviewCount;
@@ -139,6 +153,14 @@ public class PropertyResponse {
         this.price = price;
     }
 
+    public BigDecimal getDeposit() {
+        return deposit;
+    }
+
+    public void setDeposit(BigDecimal deposit) {
+        this.deposit = deposit;
+    }
+
     public Integer getCapacity() {
         return capacity;
     }
@@ -227,6 +249,78 @@ public class PropertyResponse {
         this.status = status;
     }
 
+    public String getContactPhone() {
+        return contactPhone;
+    }
+
+    public void setContactPhone(String contactPhone) {
+        this.contactPhone = contactPhone;
+    }
+
+    public String getContactEmail() {
+        return contactEmail;
+    }
+
+    public void setContactEmail(String contactEmail) {
+        this.contactEmail = contactEmail;
+    }
+
+    public String getWhatsappNumber() {
+        return whatsappNumber;
+    }
+
+    public void setWhatsappNumber(String whatsappNumber) {
+        this.whatsappNumber = whatsappNumber;
+    }
+
+    public String getPaymentMethods() {
+        return paymentMethods;
+    }
+
+    public void setPaymentMethods(String paymentMethods) {
+        this.paymentMethods = paymentMethods;
+    }
+
+    public String getPaymentDueDate() {
+        return paymentDueDate;
+    }
+
+    public void setPaymentDueDate(String paymentDueDate) {
+        this.paymentDueDate = paymentDueDate;
+    }
+
+    public String getBankName() {
+        return bankName;
+    }
+
+    public void setBankName(String bankName) {
+        this.bankName = bankName;
+    }
+
+    public String getAccountNumber() {
+        return accountNumber;
+    }
+
+    public void setAccountNumber(String accountNumber) {
+        this.accountNumber = accountNumber;
+    }
+
+    public String getAccountHolder() {
+        return accountHolder;
+    }
+
+    public void setAccountHolder(String accountHolder) {
+        this.accountHolder = accountHolder;
+    }
+
+    public String getQrCodeUrl() {
+        return qrCodeUrl;
+    }
+
+    public void setQrCodeUrl(String qrCodeUrl) {
+        this.qrCodeUrl = qrCodeUrl;
+    }
+
     public Double getAverageRating() {
         return averageRating;
     }
@@ -258,6 +352,7 @@ public class PropertyResponse {
         dto.setState(e.getState());
         dto.setPostcode(e.getPostcode());
         dto.setPrice(e.getPrice());
+        dto.setDeposit(DepositCalculator.readPropertyDeposit(e));
         dto.setCapacity(e.getCapacity());
         dto.setDescription(e.getDescription());
         dto.setAmenities(e.getAmenities());
@@ -268,6 +363,15 @@ public class PropertyResponse {
         dto.setReligion(e.getReligion());
         dto.setRace(e.getRace());
         dto.setStatus(e.getStatus());
+        dto.setContactPhone(e.getContactPhone());
+        dto.setContactEmail(e.getContactEmail());
+        dto.setWhatsappNumber(e.getWhatsappNumber());
+        dto.setPaymentMethods(e.getPaymentMethods());
+        dto.setPaymentDueDate(e.getPaymentDueDate());
+        dto.setBankName(e.getBankName());
+        dto.setAccountNumber(e.getAccountNumber());
+        dto.setAccountHolder(e.getAccountHolder());
+        dto.setQrCodeUrl(e.getQrCodeUrl());
         dto.setThumbnailPath(firstImagePath(e.getImages()));
         return dto;
     }
