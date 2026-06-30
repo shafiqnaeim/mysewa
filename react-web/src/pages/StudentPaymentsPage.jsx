@@ -387,10 +387,20 @@ export default function StudentPaymentsPage() {
     onRentMonthClick(next.m)
   }
 
-  const onRentCalendarSaved = useCallback(() => {
-    loadRentCalendar()
-    setPayRentHintMonth(null)
-  }, [loadRentCalendar])
+  const onRentCalendarSaved = useCallback(
+    (data) => {
+      if (data) {
+        if (Array.isArray(data.studentRentPaymentLogs)) {
+          setStudentRentPaymentLogs(data.studentRentPaymentLogs)
+        }
+        if (Array.isArray(data.paidMonths)) setPaidMonths(data.paidMonths.map((n) => Number(n)))
+        if (Array.isArray(data.rentMonthRecords)) setRentMonthRecords(data.rentMonthRecords)
+      } else {
+        loadRentCalendar()
+      }
+    },
+    [loadRentCalendar],
+  )
 
   if (authLoading) {
     return (
@@ -431,6 +441,8 @@ export default function StudentPaymentsPage() {
           monthLabel={`${MONTH_SHORT[payRentHintMonth - 1]} ${payYear}`}
           monthlyRent={rentCalendarMonthlyRent ?? null}
           existingLog={studentRentPaymentLogs.find((l) => Number(l.month) === payRentHintMonth) ?? null}
+          studentName={user?.fullName}
+          isPaid={paidMonths.includes(payRentHintMonth)}
           onClose={() => setPayRentHintMonth(null)}
           onSaved={onRentCalendarSaved}
         />

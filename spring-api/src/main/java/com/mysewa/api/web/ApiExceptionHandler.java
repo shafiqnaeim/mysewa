@@ -33,6 +33,16 @@ public class ApiExceptionHandler {
             String lower = raw.toLowerCase(Locale.ROOT);
             if (lower.contains("landlord_message")) {
                 message = "Database is missing landlord_message on applications — run docs/migrations/2026-06-21-application-landlord-message.sql";
+            } else if (lower.contains("property_reviews") || lower.contains("field 'comment'")) {
+                if (lower.contains("comment") && !lower.contains("category_comments")) {
+                    message = "Database has a legacy comment column on property_reviews — run docs/migrations/2026-06-29-property-reviews-drop-legacy-comment.sql (or the full schema-fix) and restart the API.";
+                } else if (lower.contains("maintenance_reports")) {
+                    message = "Database is missing maintenance_reports — run docs/migrations/2026-06-29-maintenance-reports.sql and restart the API.";
+                } else if (lower.contains("booking_id") || lower.contains("is_anonymous")) {
+                    message = "Database is missing review columns — run docs/migrations/2026-06-21-property-reviews-schema-fix.sql and restart the API.";
+                } else if (lower.contains("rating_overall") || lower.contains("public_comment")) {
+                    message = "Database needs the multi-category reviews migration — run docs/migrations/2026-06-21-property-reviews-schema-fix.sql and restart the API.";
+                }
             }
         }
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("message", message));

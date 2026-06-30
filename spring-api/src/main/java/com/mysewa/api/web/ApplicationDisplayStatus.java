@@ -25,6 +25,9 @@ public final class ApplicationDisplayStatus {
         if ("pending".equals(status)) {
             return "pending";
         }
+        if ("completed".equals(status)) {
+            return "completed";
+        }
         if ("accepted".equals(status)) {
             if (!depositPaid) {
                 return "pending_payment";

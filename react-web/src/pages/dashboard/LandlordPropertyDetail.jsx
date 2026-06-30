@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import PropertyAvailabilityCalendar from '../../components/PropertyAvailabilityCalendar'
+import AvailabilityCalendar from '../../components/AvailabilityCalendar'
 import { parseRentalStyleMeta } from './AddProperty'
 import { AMENITY_LABELS, listAmenityIds } from '../../utils/amenities'
 import {
@@ -297,6 +297,8 @@ export default function LandlordPropertyDetail({
   token,
   onEdit,
   onDelete,
+  activeBooking,
+  onEndTenancy,
 }) {
   const [activeTab, setActiveTab] = useState('overview')
   const [lightboxSrc, setLightboxSrc] = useState('')
@@ -341,6 +343,16 @@ export default function LandlordPropertyDetail({
                   <span aria-hidden="true">✏️</span>
                   Edit Property
                 </button>
+                {activeBooking && onEndTenancy ? (
+                  <button
+                    type="button"
+                    onClick={() => onEndTenancy(activeBooking)}
+                    className="inline-flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-600"
+                  >
+                    <span aria-hidden="true">📤</span>
+                    End Tenancy
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => onDelete?.(property)}
@@ -562,7 +574,7 @@ export default function LandlordPropertyDetail({
 
             {activeTab === 'calendar' ? (
               <div>
-                <PropertyAvailabilityCalendar status={property.status} />
+                <AvailabilityCalendar propertyId={property.id} viewMode="landlord" status={property.status} />
               </div>
             ) : null}
 

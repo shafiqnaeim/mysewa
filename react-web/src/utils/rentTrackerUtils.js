@@ -56,17 +56,21 @@ export function iterLeaseMonths(leaseRange) {
   return items
 }
 
-export function buildMonthCell({ year, month, leaseRange, paidMonths, recordByMonth }) {
+export function buildMonthCell({ year, month, leaseRange, paidMonths, recordByMonth, studentLogged = false }) {
   const inLease = monthOverlapsLease(year, month, leaseRange)
   const rec = recordByMonth.get(month)
   const unavailable = rec?.monthState === 'unavailable'
-  const paid = paidMonths.includes(month) && !unavailable
+  const state = String(rec?.monthState || '').toLowerCase()
+  const paid =
+    (paidMonths.includes(month) || state === 'received' || state === 'paid' || state === 'completed') &&
+    !unavailable
   const overdue = isMonthOverdue(year, month, leaseRange, paid, unavailable)
 
   let status = 'outside'
   if (inLease) {
     if (paid) status = 'paid'
     else if (unavailable) status = 'unavailable'
+    else if (studentLogged) status = 'pending_confirmation'
     else if (overdue) status = 'overdue'
     else status = 'pending'
   }
@@ -79,6 +83,7 @@ export function buildMonthCell({ year, month, leaseRange, paidMonths, recordByMo
     paid,
     unavailable,
     overdue,
+    studentLogged: studentLogged && !paid && !unavailable,
     status,
     record: rec || null,
     amount: rec?.amount != null ? Number(rec.amount) : null,
@@ -95,7 +100,8 @@ export function computeRentTotals({ leaseRange, monthlyRent, recordsByYearMonth 
     const key = `${year}-${month}`
     const rec = recordsByYearMonth.get(key)
     const unavailable = rec?.monthState === 'unavailable'
-    const paid = rec && rec.monthState !== 'unavailable'
+    const state = String(rec?.monthState || '').toLowerCase()
+    const paid = state === 'received' || state === 'paid' || state === 'completed'
     const amount =
       rec?.amount != null && Number.isFinite(Number(rec.amount)) && Number(rec.amount) > 0
         ? Number(rec.amount)

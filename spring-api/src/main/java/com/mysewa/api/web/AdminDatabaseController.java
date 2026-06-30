@@ -186,6 +186,7 @@ public class AdminDatabaseController {
         m.put("role", u.getRole());
         m.put("accountStatus", u.getAccountStatus());
         m.put("verified", u.isVerified());
+        m.put("documentVerificationStatus", u.getDocumentVerificationStatus());
         m.put("createdAt", u.getCreatedAt() != null ? ISO.format(u.getCreatedAt()) : null);
         return m;
     }
@@ -234,8 +235,16 @@ public class AdminDatabaseController {
         m.put("id", r.getId());
         m.put("propertyId", r.getPropertyId());
         m.put("studentId", r.getStudentId());
-        m.put("rating", r.getRating());
-        m.put("comment", r.getComment());
+        m.put("rating", r.getRatingOverall());
+        m.put("ratingOverall", r.getRatingOverall());
+        m.put("ratingCleanliness", r.getRatingCleanliness());
+        m.put("ratingCondition", r.getRatingCondition());
+        m.put("ratingAmenities", r.getRatingAmenities());
+        m.put("ratingLandlord", r.getRatingLandlord());
+        m.put("ratingLocation", r.getRatingLocation());
+        m.put("ratingValue", r.getRatingValue());
+        m.put("comment", r.getPublicComment());
+        m.put("publicComment", r.getPublicComment());
         m.put("createdAt", r.getCreatedAt() != null ? ISO.format(r.getCreatedAt()) : null);
         return m;
     }
@@ -351,8 +360,14 @@ public class AdminDatabaseController {
         PropertyReview row = new PropertyReview();
         row.setPropertyId(propertyId);
         row.setStudentId(studentId);
-        row.setRating(rating);
-        row.setComment(comment);
+        row.setRatingOverall(rating);
+        row.setRatingCleanliness(rating);
+        row.setRatingCondition(rating);
+        row.setRatingAmenities(rating);
+        row.setRatingLandlord(rating);
+        row.setRatingLocation(rating);
+        row.setRatingValue(rating);
+        row.setPublicComment(comment);
         row.setCreatedAt(LocalDateTime.now());
         PropertyReview saved = propertyReviewRepository.save(row);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("item", reviewRow(saved)));
@@ -402,14 +417,15 @@ public class AdminDatabaseController {
             if (rating == null || rating < 1 || rating > 5) {
                 return ResponseEntity.badRequest().body(Map.of("message", "rating must be between 1 and 5"));
             }
-            row.setRating(rating);
+            row.setRatingOverall(rating);
         }
-        if (body.containsKey("comment")) {
-            String comment = body.get("comment") == null ? "" : String.valueOf(body.get("comment")).trim();
+        if (body.containsKey("comment") || body.containsKey("publicComment")) {
+            Object raw = body.containsKey("publicComment") ? body.get("publicComment") : body.get("comment");
+            String comment = raw == null ? "" : String.valueOf(raw).trim();
             if (!StringUtils.hasText(comment)) {
                 return ResponseEntity.badRequest().body(Map.of("message", "comment cannot be empty"));
             }
-            row.setComment(comment);
+            row.setPublicComment(comment);
         }
         propertyReviewRepository.save(row);
         return ResponseEntity.ok(Map.of("item", reviewRow(row)));

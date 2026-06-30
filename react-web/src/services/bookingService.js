@@ -31,6 +31,48 @@ export async function fetchProperty(propertyId, token) {
   return data.item || data
 }
 
+/** GET /api/v1/properties/{propertyId}/availability?year=&month= or ?from=&to= */
+export async function fetchPropertyAvailability(propertyId, query = {}, token) {
+  const params = new URLSearchParams()
+  if (query.year != null && query.month != null) {
+    params.set('year', String(query.year))
+    params.set('month', String(query.month))
+  } else {
+    if (query.from) params.set('from', query.from)
+    if (query.to) params.set('to', query.to)
+  }
+  const res = await fetch(
+    `/api/v1/properties/${encodeURIComponent(propertyId)}/availability?${params}`,
+    {
+      headers: token ? authHeaders(token) : { Accept: 'application/json' },
+    },
+  )
+  return parseJson(res)
+}
+
+/** GET /api/v1/bookings/{bookingId}/calendar */
+export async function fetchBookingCalendar(bookingId, token) {
+  const auth = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('mysewa_token') : '')
+  const res = await fetch(`/api/v1/bookings/${encodeURIComponent(bookingId)}/calendar`, {
+    headers: auth ? authHeaders(auth) : { Accept: 'application/json' },
+  })
+  return parseJson(res)
+}
+
+/** PUT /api/v1/bookings/{bookingId}/end-tenancy */
+export async function endTenancy(bookingId, token) {
+  const auth = token || (typeof localStorage !== 'undefined' ? localStorage.getItem('mysewa_token') : '')
+  const res = await fetch(`/api/v1/bookings/${encodeURIComponent(bookingId)}/end-tenancy`, {
+    method: 'PUT',
+    headers: {
+      ...authHeaders(auth),
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ bookingId: Number(bookingId) }),
+  })
+  return parseJson(res)
+}
+
 /** GET /api/v1/applications/{bookingId}/deposit-instructions */
 export async function fetchBookingDepositInstructions(bookingId, token) {
   const res = await fetch(`/api/v1/applications/${encodeURIComponent(bookingId)}/deposit-instructions`, {
@@ -82,6 +124,47 @@ export function resolveAllowedChannelsFromProperty(methods) {
   if (methods?.cash) channels.push('cash')
   if (methods?.toyyibpay) channels.push('toyyibpay')
   return channels
+}
+
+const RECEIPT_MAX_BYTES = 5 * 1024 * 1024
+const RECEIPT_ACCEPT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+])
+
+export function validatePaymentReceiptFile(file) {
+  if (!file) return 'Choose a file to upload.'
+  if (!RECEIPT_ACCEPT_TYPES.has(file.type)) {
+    return 'Accepted formats: JPG, PNG, or PDF.'
+  }
+  if (file.size > RECEIPT_MAX_BYTES) {
+    return 'File is too large (max 5 MB).'
+  }
+  return null
+}
+
+/** Upload payment receipt (reuses rent receipt storage for accepted applications). */
+export async function uploadPaymentReceipt(applicationId, file, token) {
+  const validationError = validatePaymentReceiptFile(file)
+  if (validationError) {
+    throw new Error(validationError)
+  }
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch(
+    `/api/v1/applications/${encodeURIComponent(applicationId)}/rent-months/receipt-upload`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: fd,
+    },
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.message || `Upload failed (HTTP ${res.status})`)
+  if (!data.url) throw new Error('No file URL returned')
+  return String(data.url)
 }
 
 function trim(value) {

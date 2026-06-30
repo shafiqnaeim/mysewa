@@ -10,6 +10,8 @@ public interface ApplicationRentMonthRecordRepository extends JpaRepository<Appl
 
     List<ApplicationRentMonthRecord> findByApplicationIdAndRentYearOrderByRentMonthAsc(Integer applicationId, Integer rentYear);
 
+    List<ApplicationRentMonthRecord> findByApplicationIdOrderByRentYearAscRentMonthAsc(Integer applicationId);
+
     Optional<ApplicationRentMonthRecord> findByApplicationIdAndRentYearAndRentMonth(Integer applicationId, Integer rentYear, Integer rentMonth);
 
     long deleteByApplicationId(Integer applicationId);

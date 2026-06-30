@@ -4,6 +4,7 @@ import com.mysewa.api.domain.PropertyEntity;
 import com.mysewa.api.domain.UserAccount;
 import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.service.AuthService;
+import com.mysewa.api.service.AvailabilityService;
 import com.mysewa.api.service.CampusProximityService;
 import com.mysewa.api.service.PropertyService;
 import org.springframework.data.domain.Page;
@@ -25,7 +26,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -51,27 +55,52 @@ public class PropertyController {
     private final AuthService authService;
     private final CampusProximityService campusProximityService;
     private final PropertyService propertyService;
+    private final AvailabilityService availabilityService;
 
     public PropertyController(
             PropertyRepository propertyRepository,
             PropertyReviewRepository propertyReviewRepository,
             AuthService authService,
             CampusProximityService campusProximityService,
-            PropertyService propertyService
+            PropertyService propertyService,
+            AvailabilityService availabilityService
     ) {
         this.propertyRepository = propertyRepository;
         this.propertyReviewRepository = propertyReviewRepository;
         this.authService = authService;
         this.campusProximityService = campusProximityService;
         this.propertyService = propertyService;
+        this.availabilityService = availabilityService;
+    }
+
+    @GetMapping("/count")
+    public ResponseEntity<Map<String, Object>> countProperties() {
+        return ResponseEntity.ok(Map.of("count", propertyRepository.count()));
     }
 
     @GetMapping
     public ResponseEntity<Map<String, Object>> list(
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false) String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "30") int size
     ) {
+        if ("popular".equalsIgnoreCase(nullSafe(sort))) {
+            int cap = limit != null && limit > 0 ? Math.min(limit, 100) : 6;
+            List<PropertyEntity> popular = popularProperties(cap);
+            List<Integer> ids = popular.stream()
+                    .map(PropertyEntity::getId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+            Map<Integer, double[]> reviewStats = reviewStatsForPropertyIds(ids);
+            List<PropertyResponse> body = popular.stream()
+                    .map(PropertyResponse::fromEntity)
+                    .peek((dto) -> enrichReviewStats(dto, reviewStats))
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(Map.of("items", body, "count", body.size()));
+        }
+
         PageRequest pr = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), 100),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
@@ -101,6 +130,19 @@ public class PropertyController {
         payload.put("size", slice.getSize());
 
         return ResponseEntity.ok(payload);
+    }
+
+    @PostMapping("/search")
+    public ResponseEntity<Map<String, Object>> searchPost(@RequestBody(required = false) PropertySearchRequest request) {
+        return search(
+                request != null ? request.campus : null,
+                request != null ? request.location : null,
+                request != null ? request.type : null,
+                request != null ? request.status : null,
+                request != null ? request.minPrice : null,
+                request != null ? request.maxPrice : null,
+                request != null ? request.bedrooms : null
+        );
     }
 
     @GetMapping("/search")
@@ -164,6 +206,39 @@ public class PropertyController {
                     return ResponseEntity.ok(body);
                 })
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Property not found")));
+    }
+
+    @GetMapping("/{id}/availability")
+    public ResponseEntity<?> availability(
+            @PathVariable Integer id,
+            @RequestParam(name = "year", required = false) Integer year,
+            @RequestParam(name = "month", required = false) Integer month,
+            @RequestParam(name = "from", required = false) String fromParam,
+            @RequestParam(name = "to", required = false) String toParam
+    ) {
+        if (propertyRepository.findById(id).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Property not found"));
+        }
+        LocalDate from;
+        LocalDate to;
+        if (year != null && month != null) {
+            if (month < 1 || month > 12) {
+                return ResponseEntity.badRequest().body(Map.of("message", "month must be between 1 and 12"));
+            }
+            YearMonth ym = YearMonth.of(year, month);
+            LocalDate firstOfMonth = ym.atDay(1);
+            int offset = (firstOfMonth.getDayOfWeek().getValue() + 6) % 7;
+            from = firstOfMonth.minusDays(offset);
+            to = from.plusDays(41);
+        } else {
+            LocalDate today = LocalDate.now();
+            from = parseIsoDateParam(fromParam).orElse(today.withDayOfMonth(1));
+            to = parseIsoDateParam(toParam).orElse(from.plusMonths(2).withDayOfMonth(from.plusMonths(2).lengthOfMonth()));
+        }
+        if (to.isBefore(from)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Parameter 'to' must be on or after 'from'"));
+        }
+        return ResponseEntity.ok(availabilityService.availabilityPayload(id, from, to));
     }
 
     @PostMapping
@@ -295,22 +370,53 @@ public class PropertyController {
         }
     }
 
+    private List<PropertyEntity> popularProperties(int limit) {
+        List<PropertyEntity> candidates = propertyRepository.findAll().stream()
+                .filter(p -> !"rented".equalsIgnoreCase(nullSafe(p.getStatus())))
+                .collect(Collectors.toList());
+        List<Integer> ids = candidates.stream()
+                .map(PropertyEntity::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<Integer, double[]> stats = reviewStatsForPropertyIds(ids);
+        candidates.sort((a, b) -> {
+            double[] sa = stats.getOrDefault(a.getId(), new double[]{0d, 0d});
+            double[] sb = stats.getOrDefault(b.getId(), new double[]{0d, 0d});
+            int cmp = Long.compare((long) sb[1], (long) sa[1]);
+            if (cmp != 0) {
+                return cmp;
+            }
+            cmp = Double.compare(sb[0], sa[0]);
+            if (cmp != 0) {
+                return cmp;
+            }
+            int aid = a.getId() == null ? 0 : a.getId();
+            int bid = b.getId() == null ? 0 : b.getId();
+            return Integer.compare(bid, aid);
+        });
+        return candidates.stream().limit(Math.max(limit, 0)).collect(Collectors.toList());
+    }
+
     private Map<Integer, double[]> reviewStatsForPropertyIds(List<Integer> ids) {
         if (ids == null || ids.isEmpty()) {
             return Map.of();
         }
-        List<Object[]> rows = propertyReviewRepository.aggregateRatingsByPropertyIds(ids);
-        Map<Integer, double[]> map = new HashMap<>();
-        for (Object[] row : rows) {
-            if (row == null || row.length < 3 || row[0] == null) {
-                continue;
+        try {
+            List<Object[]> rows = propertyReviewRepository.aggregateCategoryRatingsByPropertyIds(ids);
+            Map<Integer, double[]> map = new HashMap<>();
+            for (Object[] row : rows) {
+                if (row == null || row.length < 3 || row[0] == null) {
+                    continue;
+                }
+                Integer pid = (Integer) row[0];
+                Number avg = (Number) row[1];
+                Number cnt = (Number) row[2];
+                map.put(pid, new double[]{avg != null ? avg.doubleValue() : 0d, cnt != null ? cnt.longValue() : 0L});
             }
-            Integer pid = (Integer) row[0];
-            Number avg = (Number) row[1];
-            Number cnt = (Number) row[2];
-            map.put(pid, new double[]{avg != null ? avg.doubleValue() : 0d, cnt != null ? cnt.longValue() : 0L});
+            return map;
+        } catch (Exception ex) {
+            return Map.of();
         }
-        return map;
     }
 
     private static void enrichReviewStats(PropertyResponse dto, Map<Integer, double[]> stats) {
@@ -329,6 +435,21 @@ public class PropertyController {
 
     private static String nullSafe(String value) {
         return value == null ? "" : value;
+    }
+
+    private static java.util.Optional<LocalDate> parseIsoDateParam(String raw) {
+        if (!StringUtils.hasText(raw)) {
+            return java.util.Optional.empty();
+        }
+        try {
+            String trimmed = raw.trim();
+            if (trimmed.length() >= 10) {
+                trimmed = trimmed.substring(0, 10);
+            }
+            return java.util.Optional.of(LocalDate.parse(trimmed));
+        } catch (DateTimeParseException ex) {
+            return java.util.Optional.empty();
+        }
     }
 
     private UserAccount requireLandlord(String authorization) {

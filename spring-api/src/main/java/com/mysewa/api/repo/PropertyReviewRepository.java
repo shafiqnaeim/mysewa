@@ -1,6 +1,8 @@
 package com.mysewa.api.repo;
 
 import com.mysewa.api.domain.PropertyReview;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,10 +23,24 @@ public interface PropertyReviewRepository extends JpaRepository<PropertyReview, 
 
     List<PropertyReview> findByStudentIdOrderByCreatedAtDesc(Integer studentId);
 
-    org.springframework.data.domain.Page<PropertyReview> findAllByOrderByCreatedAtDesc(
-            org.springframework.data.domain.Pageable pageable
-    );
+    Page<PropertyReview> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
-    @Query("SELECT r.propertyId, AVG(r.rating), COUNT(r) FROM PropertyReview r WHERE r.propertyId IN :ids GROUP BY r.propertyId")
-    List<Object[]> aggregateRatingsByPropertyIds(@Param("ids") Collection<Integer> ids);
+    @Query("""
+            SELECT r.propertyId,
+                   AVG(r.ratingOverall),
+                   COUNT(r),
+                   AVG(r.ratingCleanliness),
+                   AVG(r.ratingCondition),
+                   AVG(r.ratingAmenities),
+                   AVG(r.ratingLandlord),
+                   AVG(r.ratingLocation),
+                   AVG(r.ratingValue)
+            FROM PropertyReview r
+            WHERE r.propertyId IN :ids
+            GROUP BY r.propertyId
+            """)
+    List<Object[]> aggregateCategoryRatingsByPropertyIds(@Param("ids") Collection<Integer> ids);
+
+    @Query("SELECT AVG(r.ratingOverall) FROM PropertyReview r WHERE r.ratingOverall IS NOT NULL")
+    Double averageOverallRating();
 }

@@ -50,6 +50,19 @@ public class UserController {
         this.icCryptoService = icCryptoService;
     }
 
+    @GetMapping("/count")
+    public ResponseEntity<Map<String, Object>> countUsers(
+            @RequestParam(required = false) String role
+    ) {
+        long count;
+        if (role != null && !role.trim().isEmpty()) {
+            count = userAccountRepository.countByRoleIgnoreCase(role.trim());
+        } else {
+            count = userAccountRepository.count();
+        }
+        return ResponseEntity.ok(Map.of("count", count));
+    }
+
     @GetMapping
     public ResponseEntity<?> listUsers(
             @RequestHeader(value = "Authorization", required = false) String authorization,

@@ -19,6 +19,7 @@ import LandlordMyPropertiesPage from './pages/LandlordMyPropertiesPage'
 import LandlordApplicationsPage from './pages/LandlordApplicationsPage'
 import LandlordPaymentsPage from './pages/LandlordPaymentsPage'
 import LandlordReviewsPage from './pages/LandlordReviewsPage'
+import LandlordMaintenanceReportsPage from './pages/LandlordMaintenanceReportsPage'
 import LandlordReportsPage from './pages/LandlordReportsPage'
 import LandlordAddPropertyPage from './pages/LandlordAddPropertyPage'
 import LandlordPropertyDetailPage from './pages/LandlordPropertyDetailPage'
@@ -72,6 +73,7 @@ export default function App() {
       <Route path="/dashboard/landlord/rent-tracker/:bookingId" element={<MonthlyRentTrackerPage />} />
       <Route path="/dashboard/landlord/payments" element={<LandlordPaymentsPage />} />
       <Route path="/dashboard/landlord/reviews" element={<LandlordReviewsPage />} />
+      <Route path="/dashboard/landlord/maintenance" element={<LandlordMaintenanceReportsPage />} />
       <Route path="/dashboard/landlord/reports" element={<LandlordReportsPage />} />
       <Route path="/dashboard/landlord/account" element={<LandlordMyAccountPage />} />
       <Route path="/dashboard/landlord/verification" element={<LandlordVerificationPage />} />

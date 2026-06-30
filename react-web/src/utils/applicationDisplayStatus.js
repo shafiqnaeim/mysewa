@@ -27,6 +27,7 @@ export function getApplicationDisplayKey(app) {
   const status = String(app.status || 'pending').toLowerCase()
   if (status === 'rejected') return 'rejected'
   if (status === 'pending') return 'pending'
+  if (status === 'completed') return 'completed'
 
   if (status === 'accepted') {
     if (!isDepositPaid(app)) return 'pending_payment'

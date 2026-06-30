@@ -37,7 +37,6 @@ function isPendingVerification(status) {
 function resolveDisplayStatus(user) {
   const account = String(user.accountStatus || 'active').toLowerCase()
   if (account === 'suspended') return 'suspended'
-  if (isPendingVerification(user.documentVerificationStatus) || !user.verified) return 'pending'
   return 'active'
 }
 
@@ -88,6 +87,7 @@ export default function AdminUsersPage() {
   const [detailBookings, setDetailBookings] = useState([])
   const [detailProperties, setDetailProperties] = useState([])
   const [detailActivity, setDetailActivity] = useState([])
+  const [detailVerification, setDetailVerification] = useState(null)
 
   const loadUsers = useCallback(async () => {
     if (!token) return
@@ -248,11 +248,16 @@ export default function AdminUsersPage() {
     })
   }
 
+  function handleOpenVerification(row) {
+    navigate('/dashboard/admin/verification')
+  }
+
   async function handleViewUser(row) {
     setDetailUser(row)
     setDetailLoading(true)
     setDetailBookings([])
     setDetailProperties([])
+    setDetailVerification(null)
     setDetailActivity([
       { id: 'joined', text: `Joined platform on ${row.joinedDisplay}` },
       { id: 'status', text: `Account status: ${row.displayStatus}` },
@@ -267,6 +272,13 @@ export default function AdminUsersPage() {
     const headers = { Authorization: `Bearer ${token}` }
 
     try {
+      if (role === 'student' || role === 'landlord') {
+        const vRes = await fetch(`/api/v1/admin/verifications/${row.id}`, { headers })
+        const vData = await vRes.json().catch(() => ({}))
+        if (vRes.ok && vData.item) {
+          setDetailVerification(vData.item)
+        }
+      }
       if (role === 'student') {
         const res = await fetch('/api/v1/admin/database/applications/rows?page=0&size=200', { headers })
         const data = await res.json().catch(() => ({}))
@@ -331,6 +343,7 @@ export default function AdminUsersPage() {
         detailBookings={detailBookings}
         detailProperties={detailProperties}
         detailActivity={detailActivity}
+        detailVerification={detailVerification}
         actionSavingId={actionSavingId}
         bulkSaving={bulkSaving}
         currentAdminId={adminUser?.id}
@@ -349,9 +362,13 @@ export default function AdminUsersPage() {
         onToggleSelectAll={toggleSelectAll}
         onPageChange={setPage}
         onViewUser={handleViewUser}
-        onCloseDetail={() => setDetailUser(null)}
+        onCloseDetail={() => {
+          setDetailUser(null)
+          setDetailVerification(null)
+        }}
         onSuspendUser={handleSuspendUser}
         onVerifyUser={handleVerifyUser}
+        onOpenVerification={handleOpenVerification}
         onToggleDetailStatus={() => detailUser && handleSuspendUser(detailUser)}
         onDeleteUser={handleDeleteUser}
         onBulkSuspend={handleBulkSuspend}

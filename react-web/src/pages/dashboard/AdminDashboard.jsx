@@ -11,7 +11,31 @@ import {
   YAxis,
 } from 'recharts'
 
-const PROPERTY_COLORS = ['#DC2626', '#2563EB', '#F59E0B', '#6B7280']
+function propertyColor(name) {
+  if (name === 'House') return '#E88D5B'
+  if (name === 'Room') return '#3B82F6'
+  return '#6B7280'
+}
+
+function renderPieLabel({ name, value, count, cx, cy, midAngle, innerRadius, outerRadius }) {
+  if (!count || value <= 0) return null
+  const RADIAN = Math.PI / 180
+  const radius = innerRadius + (outerRadius - innerRadius) * 0.55
+  const x = cx + radius * Math.cos(-midAngle * RADIAN)
+  const y = cy + radius * Math.sin(-midAngle * RADIAN)
+  return (
+    <text
+      x={x}
+      y={y}
+      fill="#1A1A2E"
+      textAnchor="middle"
+      dominantBaseline="central"
+      className="text-xs font-semibold"
+    >
+      {`${value}%`}
+    </text>
+  )
+}
 
 function formatNumber(n) {
   const v = Number(n)
@@ -44,7 +68,9 @@ function PropertyTooltip({ active, payload }) {
   const row = payload[0].payload
   return (
     <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm shadow-md">
-      <p className="font-semibold text-[#1A1A2E]">{row.name}</p>
+      <p className="font-semibold text-[#1A1A2E]">
+        {row.name} ({row.count ?? 0})
+      </p>
       <p className="text-[#6B7280]">{row.value}%</p>
     </div>
   )
@@ -69,6 +95,9 @@ export default function AdminDashboard({
     bookings = 0,
     pendingVerifications: pendingCount = 0,
   } = headerStats
+
+  const propertyDistTotal = propertyDistribution.reduce((sum, item) => sum + (item.count ?? 0), 0)
+  const pieData = propertyDistribution.filter((item) => (item.count ?? 0) > 0)
 
   return (
     <div className="min-h-screen w-full bg-[#FAFAFA] font-sans text-[#1A1A2E]">
@@ -145,35 +174,43 @@ export default function AdminDashboard({
               Property Distribution
             </h2>
             <div className="mt-4 h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={propertyDistribution}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={2}
-                  >
-                    {propertyDistribution.map((entry, i) => (
-                      <Cell key={entry.name} fill={PROPERTY_COLORS[i % PROPERTY_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<PropertyTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
+              {propertyDistTotal > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={90}
+                      paddingAngle={2}
+                      label={renderPieLabel}
+                      labelLine={false}
+                    >
+                      {pieData.map((entry) => (
+                        <Cell key={entry.name} fill={propertyColor(entry.name)} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<PropertyTooltip />} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-sm text-[#6B7280]">No properties with House or Room type yet.</p>
+                </div>
+              )}
             </div>
             <ul className="mt-2 flex flex-wrap justify-center gap-4 text-xs text-[#6B7280]">
-              {propertyDistribution.map((item, i) => (
+              {propertyDistribution.map((item) => (
                 <li key={item.name} className="flex items-center gap-1.5">
                   <span
                     className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: PROPERTY_COLORS[i % PROPERTY_COLORS.length] }}
+                    style={{ background: propertyColor(item.name) }}
                     aria-hidden="true"
                   />
-                  {item.name} {item.value}%
+                  {item.name} ({item.count ?? 0}) {item.value}%
                 </li>
               ))}
             </ul>

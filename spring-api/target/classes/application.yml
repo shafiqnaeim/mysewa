@@ -10,8 +10,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:mysewa.fyp@gmail.com}
-    password: ${MAIL_PASSWORD:rzfe stxx oxlz prfw}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -43,40 +43,37 @@ app:
     # 32+ chars recommended; shorter values are hashed to a 256-bit key. Override in production.
     ic-encryption-key: ${MYSEWA_IC_ENCRYPTION_KEY:}
   payment:
-    # Public URL of this API (ToyyibPay server-to-server callback). Localhost will not receive callbacks — use ngrok or deploy.
-    public-api-base-url: ${APP_PUBLIC_API_URL:https://kathrin-shotten-janay.ngrok-free.dev}
+    public-api-base-url: ${APP_PUBLIC_API_URL:}
     front-return-base: ${APP_BASE_URL:http://localhost:5173}
     manual:
-      # Override in .env — defaults match PaymentProperties.java demo strings
-      bank-name: ${PAYMENT_MANUAL_BANK_NAME:Maybank}
-      bank-account: ${PAYMENT_MANUAL_BANK_ACCOUNT:151240496561}
-      bank-holder: ${PAYMENT_MANUAL_BANK_HOLDER:MUHAMMAD SHAFIQ IRFAN BIN MOHD NAIM}
-      # Optional: direct HTTPS URL to a PNG/JPEG the student’s browser can load (see docs/PAYMENTS.md)
+      bank-name: ${PAYMENT_MANUAL_BANK_NAME:}
+      bank-account: ${PAYMENT_MANUAL_BANK_ACCOUNT:}
+      bank-holder: ${PAYMENT_MANUAL_BANK_HOLDER:}
       qr-image-url: ${PAYMENT_MANUAL_QR_URL:}
     toyyibpay:
-      enabled: ${TOYYIBPAY_ENABLED:true}
+      enabled: ${TOYYIBPAY_ENABLED:false}
       sandbox: ${TOYYIBPAY_SANDBOX:true}
-      user-secret-key: ${TOYYIBPAY_USER_SECRET_KEY:xlabjavo-q49m-895u-n47q-letkx6v8mcs3}
-      category-code: ${TOYYIBPAY_CATEGORY_CODE:sqvxlc8i}
-    # Local QA only: student can clear deposit rows to re-test ToyyibPay / manual deposit. Never enable in production.
+      user-secret-key: ${TOYYIBPAY_USER_SECRET_KEY:}
+      category-code: ${TOYYIBPAY_CATEGORY_CODE:}
     dev-allow-deposit-reset: ${MYSEWA_DEV_RESET_DEPOSIT:false}
   mail:
     from: ${MAIL_FROM:mysewa.fyp@gmail.com}
-    support: ${MAIL_SUPPORT:support@mysewa.com}
+    support: ${MAIL_SUPPORT:mysewa.fyp@gmail.com}
     verification-expiry-hours: ${MAIL_VERIFICATION_EXPIRY_HOURS:24}
     password-reset-expiry-minutes: ${MAIL_PASSWORD_RESET_EXPIRY_MINUTES:30}
-  # On each startup: create admin if missing, or reconcile existing user to admin + synced password + verified.
   admin:
-    # Local dev defaults — override with APP_ADMIN_EMAIL / APP_ADMIN_PASSWORD in .env for real deploys.
-    # Sign-in: use this email or the login alias "Admin" (see AuthService).
     email: ${APP_ADMIN_EMAIL:admin@localhost}
     password: ${APP_ADMIN_PASSWORD:Admin123}
   demo:
-    # Login page demo rows — created/reconciled on startup (Student / Landlord aliases).
-    enabled: ${MYSEWA_DEMO_ACCOUNTS:true}
+    enabled: ${MYSEWA_DEMO_ACCOUNTS:false}
     student:
       email: ${DEMO_STUDENT_EMAIL:student@demo.mysewa}
       password: ${DEMO_STUDENT_PASSWORD:Student123}
     landlord:
       email: ${DEMO_LANDLORD_EMAIL:landlord@demo.mysewa}
       password: ${DEMO_LANDLORD_PASSWORD:Landlord123}
+
+logging:
+  level:
+    root: INFO
+    com.mysewa: INFO

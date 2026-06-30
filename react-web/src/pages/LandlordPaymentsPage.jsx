@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import LandlordLayout from '../components/LandlordLayout'
+import ReceiptModal from '../components/ReceiptModal'
 import { useLandlordGuard } from '../hooks/useLandlordGuard'
 import { useToast } from '../context/ToastContext'
+import { buildDepositReceiptData, buildRentReceiptData } from '../utils/ReceiptGenerator'
 import Payments from './dashboard/Payments'
 
 function depositAmount(app) {
@@ -14,13 +16,19 @@ function studentName(app) {
   return app.student?.fullName?.trim() || 'Student'
 }
 
-function buildDepositPayments(applications) {
+function buildDepositPayments(applications, landlordName) {
   const rows = []
   for (const app of applications) {
     const amount = depositAmount(app)
     if (amount <= 0) continue
 
     if (app.depositPaid) {
+      const receipt = buildDepositReceiptData({
+        application: app,
+        propertyDetail: { name: app.propertyName, location: app.propertyLocation },
+        studentName: studentName(app),
+        landlordName,
+      })
       rows.push({
         id: `deposit-${app.id}`,
         date: app.updatedAt || app.createdAt,
@@ -29,6 +37,7 @@ function buildDepositPayments(applications) {
         amount,
         type: 'Deposit',
         status: 'paid',
+        receipt,
       })
     } else if (String(app.status || '').toLowerCase() === 'accepted') {
       rows.push({
@@ -45,8 +54,9 @@ function buildDepositPayments(applications) {
   return rows
 }
 
-function rentRowsFromCalendar(app, calendar, year) {
+function rentRowsFromCalendar(app, calendar, year, landlordName) {
   const records = Array.isArray(calendar.rentMonthRecords) ? calendar.rentMonthRecords : []
+  const studentLogs = Array.isArray(calendar.studentRentPaymentLogs) ? calendar.studentRentPaymentLogs : []
   const student = calendar.studentName || studentName(app)
   const property = calendar.propertyName || app.propertyName || `Property #${app.propertyId}`
   const rows = []
@@ -58,17 +68,38 @@ function rentRowsFromCalendar(app, calendar, year) {
     if (!Number.isFinite(amount) || amount <= 0) continue
 
     const month = Number(record.month)
-    const date = Number.isFinite(month) ? new Date(year, month - 1, 1).toISOString() : app.updatedAt
+    const isPaid = state === 'received' || state === 'paid' || state === 'completed'
+    const date = record.recordedAt || (Number.isFinite(month) ? new Date(year, month - 1, 1).toISOString() : app.updatedAt)
+    const studentLog = studentLogs.find((l) => Number(l.month) === month)
 
-    rows.push({
+    const row = {
       id: `rent-${app.id}-${year}-${record.month}`,
       date,
       student,
       property,
       amount,
       type: 'Rent',
-      status: state === 'paid' || state === 'completed' ? 'paid' : 'pending',
-    })
+      status: isPaid ? 'paid' : 'pending',
+    }
+
+    if (isPaid) {
+      row.receipt = buildRentReceiptData({
+        bookingId: app.id,
+        year,
+        month,
+        amount,
+        paymentMethod: studentLog?.paymentMethod || record.channel,
+        paymentLogId: studentLog?.paymentLogId,
+        studentName: student,
+        propertyName: property,
+        propertyAddress: calendar.propertyAddress || app.propertyLocation || '',
+        landlordName,
+        recordedAt: record.recordedAt,
+        loggedAt: studentLog?.loggedAt,
+      })
+    }
+
+    rows.push(row)
   }
 
   return rows
@@ -79,6 +110,8 @@ export default function LandlordPaymentsPage() {
   const { pushToast } = useToast()
   const [payments, setPayments] = useState([])
   const [loading, setLoading] = useState(true)
+  const [receiptModalData, setReceiptModalData] = useState(null)
+  const landlordName = user?.fullName || 'Landlord'
 
   useEffect(() => {
     if (authError) pushToast({ message: authError, type: 'error', duration: 7000 })
@@ -101,7 +134,7 @@ export default function LandlordPaymentsPage() {
         if (!res.ok) throw new Error(data.message || `Failed to load payments (HTTP ${res.status})`)
 
         const applications = Array.isArray(data.items) ? data.items : []
-        const rows = buildDepositPayments(applications)
+        const rows = buildDepositPayments(applications, landlordName)
 
         const accepted = applications.filter((a) => String(a.status || '').toLowerCase() === 'accepted')
         const year = new Date().getFullYear()
@@ -115,7 +148,7 @@ export default function LandlordPaymentsPage() {
               )
               const calendar = await calRes.json().catch(() => ({}))
               if (!calRes.ok) return
-              rows.push(...rentRowsFromCalendar(app, calendar, year))
+              rows.push(...rentRowsFromCalendar(app, calendar, year, landlordName))
             } catch {
               /* skip rent rows for this app */
             }
@@ -137,7 +170,7 @@ export default function LandlordPaymentsPage() {
     return () => {
       cancelled = true
     }
-  }, [user?.id, pushToast])
+  }, [user?.id, landlordName, pushToast])
 
   if (authLoading) {
     return (
@@ -163,7 +196,14 @@ export default function LandlordPaymentsPage() {
 
   return (
     <LandlordLayout>
-      <Payments payments={payments} loading={loading} />
+      <Payments
+        payments={payments}
+        loading={loading}
+        onViewReceipt={(receipt) => setReceiptModalData(receipt)}
+      />
+      {receiptModalData ? (
+        <ReceiptModal receipt={receiptModalData} onClose={() => setReceiptModalData(null)} />
+      ) : null}
     </LandlordLayout>
   )
 }

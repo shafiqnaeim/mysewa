@@ -17,6 +17,10 @@ import com.mysewa.api.repo.FinancialTransactionRepository;
 import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.repo.UserAccountRepository;
 import com.mysewa.api.service.AuthService;
+import com.mysewa.api.service.AvailabilityService;
+import com.mysewa.api.service.BookingService;
+import com.mysewa.api.service.NotificationService;
+import com.mysewa.api.service.PaymentLogService;
 import com.mysewa.api.service.IcCryptoService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,6 +68,7 @@ public class LandlordApplicationToolsController {
     private static final String STUDENT_BLOCKED_LANDLORD_RENT_ACTION = "STUDENT_BLOCKED_LANDLORD_RENT_ACTION";
 
     private static final String MONTH_STATE_RECEIVED = "received";
+    private static final String MONTH_STATE_PENDING = "pending";
     private static final String MONTH_STATE_UNAVAILABLE = "unavailable";
 
     private static final BigDecimal RENT_AMOUNT_MIN = new BigDecimal("1.00");
@@ -95,6 +100,10 @@ public class LandlordApplicationToolsController {
     private final PaymentProperties paymentProperties;
     private final ToyyibPayService toyyibPayService;
     private final IcCryptoService icCryptoService;
+    private final BookingService bookingService;
+    private final AvailabilityService availabilityService;
+    private final NotificationService notificationService;
+    private final PaymentLogService paymentLogService;
 
     public LandlordApplicationToolsController(
             AuthService authService,
@@ -106,7 +115,11 @@ public class LandlordApplicationToolsController {
             ApplicationRentMonthStudentLogRepository rentMonthStudentLogRepository,
             PaymentProperties paymentProperties,
             ToyyibPayService toyyibPayService,
-            IcCryptoService icCryptoService
+            IcCryptoService icCryptoService,
+            BookingService bookingService,
+            AvailabilityService availabilityService,
+            NotificationService notificationService,
+            PaymentLogService paymentLogService
     ) {
         this.authService = authService;
         this.applicationRepository = applicationRepository;
@@ -118,6 +131,10 @@ public class LandlordApplicationToolsController {
         this.paymentProperties = paymentProperties;
         this.toyyibPayService = toyyibPayService;
         this.icCryptoService = icCryptoService;
+        this.bookingService = bookingService;
+        this.availabilityService = availabilityService;
+        this.notificationService = notificationService;
+        this.paymentLogService = paymentLogService;
     }
 
     private static String nullSafe(String value) {
@@ -218,6 +235,7 @@ public class LandlordApplicationToolsController {
         LocalDateTime now = LocalDateTime.now();
         tx.setCreatedAt(now);
         financialTransactionRepository.save(tx);
+        bookingService.onDepositConfirmed(app, property);
 
         UserAccount student = userAccountRepository.findById(app.getStudentId()).orElse(null);
         ApplicationResponse item = ApplicationResponse.from(app, property, student, icCryptoService);
@@ -290,10 +308,57 @@ public class LandlordApplicationToolsController {
         return ResponseEntity.ok(body);
     }
 
+    @GetMapping("/{id}/calendar")
+    public ResponseEntity<?> bookingCalendar(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable("id") Integer applicationId
+    ) {
+        UserAccount user;
+        try {
+            user = authService.me(authorization);
+        } catch (IllegalArgumentException ex) {
+            return unauthorizedOrForbidden(ex);
+        }
+        if (applicationId == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Application id is required"));
+        }
+        Optional<Application> appOpt = applicationRepository.findById(applicationId);
+        if (appOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Application not found"));
+        }
+        Application app = appOpt.get();
+        Optional<PropertyEntity> propOpt = propertyRepository.findById(app.getPropertyId());
+        if (propOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Property not found"));
+        }
+        PropertyEntity property = propOpt.get();
+        String role = normalizedRole(user);
+        boolean landlordOk = "landlord".equals(role)
+                && property.getLandlordId() != null
+                && property.getLandlordId().equals(user.getId());
+        boolean studentOk = "student".equals(role)
+                && app.getStudentId() != null
+                && app.getStudentId().equals(user.getId());
+        if (!landlordOk && !studentOk) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "message",
+                    "You can only view this calendar as the landlord for this listing or the student on this application."
+            ));
+        }
+        if (!"accepted".equalsIgnoreCase(nullSafe(app.getStatus()))) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "message",
+                    "Booking calendar is only available for accepted applications."
+            ));
+        }
+        return ResponseEntity.ok(availabilityService.bookingCalendarPayload(app, property));
+    }
+
     private Map<String, Object> buildRentYearStateBody(Integer applicationId, int y) {
         List<ApplicationRentMonthRecord> rows =
                 rentMonthRecordRepository.findByApplicationIdAndRentYearOrderByRentMonthAsc(applicationId, y);
         List<Integer> paidMonths = new ArrayList<>();
+        List<Integer> pendingMonths = new ArrayList<>();
         List<Integer> unavailableMonths = new ArrayList<>();
         List<Map<String, Object>> rentMonthRecords = new ArrayList<>();
         for (ApplicationRentMonthRecord r : rows) {
@@ -309,6 +374,8 @@ public class LandlordApplicationToolsController {
             rentMonthRecords.add(one);
             if (MONTH_STATE_UNAVAILABLE.equals(state)) {
                 unavailableMonths.add(r.getRentMonth());
+            } else if (MONTH_STATE_PENDING.equals(state)) {
+                pendingMonths.add(r.getRentMonth());
             } else {
                 paidMonths.add(r.getRentMonth());
             }
@@ -316,6 +383,7 @@ public class LandlordApplicationToolsController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("year", y);
         out.put("paidMonths", paidMonths);
+        out.put("pendingMonths", pendingMonths);
         out.put("unavailableMonths", unavailableMonths);
         out.put("rentMonthRecords", rentMonthRecords);
         List<Integer> studentLoggedMonths = new ArrayList<>();
@@ -345,6 +413,9 @@ public class LandlordApplicationToolsController {
         String t = raw.trim().toLowerCase(Locale.ROOT);
         if (MONTH_STATE_UNAVAILABLE.equals(t)) {
             return MONTH_STATE_UNAVAILABLE;
+        }
+        if (MONTH_STATE_PENDING.equals(t) || "unpaid".equals(t)) {
+            return MONTH_STATE_PENDING;
         }
         return MONTH_STATE_RECEIVED;
     }
@@ -826,96 +897,19 @@ public class LandlordApplicationToolsController {
         if (body == null || body.getYear() == null || body.getMonth() == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "year and month are required"));
         }
-        int y = body.getYear();
-        int m = body.getMonth();
-        if (y < 2000 || y > 2100) {
-            return ResponseEntity.badRequest().body(Map.of("message", "year must be between 2000 and 2100"));
+        try {
+            Map<String, Object> result = paymentLogService.logStudentRentPayment(
+                    student,
+                    applicationId,
+                    body.getYear(),
+                    body.getMonth(),
+                    body.getPaymentMethod(),
+                    body.getReceiptUrl()
+            );
+            return ResponseEntity.ok(result);
+        } catch (org.springframework.web.server.ResponseStatusException ex) {
+            return ResponseEntity.status(ex.getStatusCode()).body(Map.of("message", ex.getReason()));
         }
-        if (m < 1 || m > 12) {
-            return ResponseEntity.badRequest().body(Map.of("message", "month must be between 1 and 12"));
-        }
-        String pm = body.getPaymentMethod() == null ? "" : body.getPaymentMethod().trim().toLowerCase(Locale.ROOT);
-        if (!STUDENT_RENT_PAYMENT_METHODS.contains(pm)) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "message",
-                    "paymentMethod must be one of: cash, bank_transfer, duitnow_qr, toyyibpay"
-            ));
-        }
-        String receiptUrlRaw = trimToNull(body.getReceiptUrl());
-        if ("bank_transfer".equals(pm) || "duitnow_qr".equals(pm)) {
-            if (!isAllowedReceiptUrl(receiptUrlRaw)) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "message",
-                        "Upload a receipt image or PDF for this payment method, then confirm."
-                ));
-            }
-        } else if (receiptUrlRaw != null && !isAllowedReceiptUrl(receiptUrlRaw)) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Invalid receipt URL."));
-        }
-
-        Optional<Application> appOpt = applicationRepository.findById(applicationId);
-        if (appOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Application not found"));
-        }
-        Application app = appOpt.get();
-        if (app.getStudentId() == null || !app.getStudentId().equals(student.getId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You can only update your own applications."));
-        }
-        if (!"accepted".equalsIgnoreCase(nullSafe(app.getStatus()))) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                    "message",
-                    "Rent calendar is only available for accepted applications."
-            ));
-        }
-
-        Optional<LocalDate[]> leaseBounds = parseLeaseBounds(app);
-        if (leaseBounds.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "message",
-                    "This application is missing valid move-in and lease-end dates; rent months cannot be updated."
-            ));
-        }
-        LocalDate moveIn = leaseBounds.get()[0];
-        LocalDate moveOut = leaseBounds.get()[1];
-        if (!yearMonthWithinLease(y, m, moveIn, moveOut)) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "message",
-                    "That month is outside the tenancy period (from move-in through lease end)."
-            ));
-        }
-
-        Optional<ApplicationRentMonthRecord> landlordRow =
-                rentMonthRecordRepository.findByApplicationIdAndRentYearAndRentMonth(applicationId, y, m);
-        if (landlordRow.isPresent()) {
-            String st = normalizeMonthState(landlordRow.get().getMonthState());
-            if (MONTH_STATE_UNAVAILABLE.equals(st)) {
-                return ResponseEntity.badRequest().body(Map.of(
-                        "message",
-                        "That month is marked as not expecting rent — you cannot log a payment for it."
-                ));
-            }
-            if (MONTH_STATE_RECEIVED.equals(st)) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                        "message",
-                        "Your landlord has already marked this month as paid."
-                ));
-            }
-        }
-
-        Optional<ApplicationRentMonthStudentLog> existingOpt =
-                rentMonthStudentLogRepository.findByApplicationIdAndRentYearAndRentMonth(applicationId, y, m);
-        ApplicationRentMonthStudentLog row = existingOpt.orElseGet(ApplicationRentMonthStudentLog::new);
-        if (existingOpt.isEmpty()) {
-            row.setApplicationId(applicationId);
-            row.setRentYear(y);
-            row.setRentMonth(m);
-        }
-        row.setLoggedAt(LocalDateTime.now());
-        row.setPaymentMethod(pm);
-        row.setReceiptUrl(receiptUrlRaw);
-        rentMonthStudentLogRepository.save(row);
-
-        return ResponseEntity.ok(buildRentYearStateBody(applicationId, y));
     }
 
     @PostMapping("/{id}/rent-months/student-payment-log/clear")

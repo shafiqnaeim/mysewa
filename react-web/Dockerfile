@@ -8,6 +8,9 @@ RUN npm config set fetch-retries 10 \
   && npm config set fetch-timeout 300000 \
   && sh -c 'for i in 1 2 3 4 5; do echo "npm ci attempt $i"; npm ci && exit 0; sleep 20; done; exit 1'
 COPY . .
+# Vite bakes VITE_* into the bundle at build time — pass from docker compose build args / root .env
+ARG VITE_GOOGLE_MAPS_API_KEY=
+ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
 RUN npm run build
 
 FROM nginx:1.27-alpine

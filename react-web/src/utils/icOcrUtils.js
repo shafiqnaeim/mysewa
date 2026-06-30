@@ -22,7 +22,28 @@ export function formatIcNumber(raw) {
 }
 
 export function validateIcFormat(icNumber) {
-  return IC_FORMAT_REGEX.test(String(icNumber || '').trim())
+  const trimmed = String(icNumber || '').trim()
+  if (IC_FORMAT_REGEX.test(trimmed)) return true
+  const formatted = formatIcNumber(trimmed)
+  return formatted !== '' && IC_FORMAT_REGEX.test(formatted)
+}
+
+/** Map API / validation errors to user-facing IC confirm messages. */
+export function mapIcConfirmError(message) {
+  const m = String(message || '').toLowerCase()
+  if (m.includes('already')) {
+    return { type: 'duplicate', message: 'This IC is already registered' }
+  }
+  if (m.includes('format') || m.includes('yyyymm')) {
+    return { type: 'format', message: 'Invalid IC format. Please use YYYYMM-DD-####' }
+  }
+  if (m.includes('profile') || m.includes('match')) {
+    return {
+      type: 'profile',
+      message: 'IC number does not match your registered profile. Use the IC from your account.',
+    }
+  }
+  return { type: 'generic', message: message || 'Could not confirm IC.' }
 }
 
 export function normalizeName(value) {

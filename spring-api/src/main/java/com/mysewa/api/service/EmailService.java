@@ -14,9 +14,13 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class EmailService {
+
+    private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
     private static final String VERIFY_TEMPLATE = "templates/email/verify-email.html";
     private static final String RESET_TEMPLATE = "templates/email/reset-password.html";
@@ -148,8 +152,7 @@ public class EmailService {
     private void sendHtmlEmail(String to, String subject, String htmlBody, String plainText) {
         JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
         if (mailSender == null) {
-            System.out.println("MAIL_DEBUG to=" + to + " subject=" + subject);
-            System.out.println("MAIL_DEBUG plain=" + plainText);
+            log.warn("SMTP not configured — HTML email not sent to {} (subject: {})", to, subject);
             return;
         }
         try {
@@ -161,9 +164,7 @@ public class EmailService {
             helper.setText(plainText, htmlBody);
             mailSender.send(message);
         } catch (MessagingException ex) {
-            System.out.println("MAIL_WARN Unable to send HTML email: " + ex.getMessage());
-            System.out.println("MAIL_DEBUG to=" + to + " subject=" + subject);
-            System.out.println("MAIL_DEBUG plain=" + plainText);
+            log.error("Unable to send HTML email to {}: {}", to, ex.getMessage());
         }
     }
 

@@ -24,10 +24,8 @@ const DEFAULT_GROWTH = [
 ]
 
 const DEFAULT_PROPERTY_DIST = [
-  { name: 'House', value: 40 },
-  { name: 'Apartment', value: 35 },
-  { name: 'Studio', value: 20 },
-  { name: 'Other', value: 5 },
+  { name: 'House', value: 0, count: 0 },
+  { name: 'Room', value: 0, count: 0 },
 ]
 
 function splitFirstName(fullName) {
@@ -92,27 +90,16 @@ function buildUserGrowth(users, totalUsers) {
   })
 }
 
-function normalizePropertyType(raw) {
-  const t = String(raw || '').trim().toLowerCase()
-  if (t.includes('house') || t.includes('terrace') || t.includes('bungalow')) return 'House'
-  if (t.includes('apartment') || t.includes('condo') || t.includes('flat')) return 'Apartment'
-  if (t.includes('studio') || t.includes('room')) return 'Studio'
-  return 'Other'
-}
+function buildPropertyDistribution(counts) {
+  const house = Number(counts?.House) || 0
+  const room = Number(counts?.Room) || 0
+  const total = house + room
+  if (!total) return DEFAULT_PROPERTY_DIST
 
-function buildPropertyDistribution(properties) {
-  if (!properties.length) return DEFAULT_PROPERTY_DIST
-
-  const counts = { House: 0, Apartment: 0, Studio: 0, Other: 0 }
-  properties.forEach((p) => {
-    const key = normalizePropertyType(p.type)
-    counts[key] += 1
-  })
-  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1
-  return Object.entries(counts).map(([name, count]) => ({
-    name,
-    value: Math.round((count / total) * 100),
-  }))
+  return [
+    { name: 'House', count: house, value: Math.round((house / total) * 100) },
+    { name: 'Room', count: room, value: Math.round((room / total) * 100) },
+  ]
 }
 
 function buildRecentActivity(users, properties, applications) {
@@ -191,6 +178,7 @@ export default function AdminDashboardPage() {
   const [users, setUsers] = useState([])
   const [properties, setProperties] = useState([])
   const [applications, setApplications] = useState([])
+  const [propertyTypeCounts, setPropertyTypeCounts] = useState({ House: 0, Room: 0 })
   const [dataLoading, setDataLoading] = useState(false)
   const [verificationActionId, setVerificationActionId] = useState(null)
 
@@ -212,23 +200,31 @@ export default function AdminDashboardPage() {
       setDataLoading(true)
       try {
         const headers = { Authorization: `Bearer ${token}` }
-        const [statsRes, usersRes, propsRes, appsRes] = await Promise.all([
+        const [statsRes, usersRes, propsRes, appsRes, typeCountsRes] = await Promise.all([
           fetch('/api/v1/admin/stats', { headers }),
           fetch('/api/v1/admin/users?page=0&size=100', { headers }),
           fetch('/api/v1/admin/database/properties/rows?page=0&size=200', { headers }),
           fetch('/api/v1/admin/database/applications/rows?page=0&size=50', { headers }),
+          fetch('/api/v1/admin/properties/count-by-type', { headers }),
         ])
 
         const statsData = await statsRes.json().catch(() => ({}))
         const usersData = await usersRes.json().catch(() => ({}))
         const propsData = await propsRes.json().catch(() => ({}))
         const appsData = await appsRes.json().catch(() => ({}))
+        const typeCountsData = await typeCountsRes.json().catch(() => ({}))
 
         if (!cancelled) {
           if (statsRes.ok) setStats(statsData)
           setUsers(Array.isArray(usersData.items) ? usersData.items : [])
           setProperties(Array.isArray(propsData.items) ? propsData.items : [])
           setApplications(Array.isArray(appsData.items) ? appsData.items : [])
+          if (typeCountsRes.ok) {
+            setPropertyTypeCounts({
+              House: Number(typeCountsData.House) || 0,
+              Room: Number(typeCountsData.Room) || 0,
+            })
+          }
         }
       } catch {
         if (!cancelled) {
@@ -247,7 +243,7 @@ export default function AdminDashboardPage() {
 
   const pendingVerifications = useMemo(() => buildPendingVerifications(users), [users])
   const userGrowthData = useMemo(() => buildUserGrowth(users, stats?.usersTotal), [users, stats?.usersTotal])
-  const propertyDistribution = useMemo(() => buildPropertyDistribution(properties), [properties])
+  const propertyDistribution = useMemo(() => buildPropertyDistribution(propertyTypeCounts), [propertyTypeCounts])
   const recentActivity = useMemo(
     () => buildRecentActivity(users, properties, applications),
     [users, properties, applications],

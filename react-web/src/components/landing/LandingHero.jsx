@@ -1,111 +1,114 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { motion, useScroll, useTransform } from 'framer-motion'
+import CountUpStat from './CountUpStat'
+import { easeOut, hoverButton } from './landingMotion'
 
 const HERO_IMAGE = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=2000&q=80'
 
-export default function LandingHero({ onSearch }) {
-  const [location, setLocation] = useState('')
-  const [moveInDate, setMoveInDate] = useState('')
-  const [maxPrice, setMaxPrice] = useState('')
+export default function LandingHero({ stats, statsLoading }) {
+  const navigate = useNavigate()
+  const { scrollY } = useScroll()
+  const bgY = useTransform(scrollY, [0, 600], [0, 120])
 
-  const handleSubmit = (e) => {
-    e.preventDefault()
-    onSearch?.({ location, moveInDate, maxPrice })
-  }
+  const propertyCount = stats?.propertyCount ?? 0
+  const studentCount = stats?.studentCount ?? 0
+  const averageRating = stats?.averageRating
 
   return (
     <section className="relative flex min-h-screen flex-col justify-center overflow-hidden">
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url("${HERO_IMAGE}")` }}
+      <motion.div
+        style={{ y: bgY }}
+        className="absolute inset-0 scale-105 bg-cover bg-center"
+        initial={{ scale: 1.08 }}
+        animate={{ scale: 1 }}
+        transition={{ duration: 1.4, ease: easeOut }}
         aria-hidden="true"
-      />
+      >
+        <div
+          className="h-full w-full bg-cover bg-center"
+          style={{ backgroundImage: `url("${HERO_IMAGE}")` }}
+        />
+      </motion.div>
+
       <div
-        className="absolute inset-0 bg-gradient-to-br from-story-primary/92 via-story-primary/78 to-story-primary/88"
+        className="absolute inset-0 bg-gradient-to-br from-[#2D3748]/95 via-[#2D3748]/80 to-[#E88D5B]/40"
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-16 pt-28 text-center sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto flex w-full max-w-5xl flex-col items-center px-4 pb-20 pt-28 text-center sm:px-6 lg:px-8">
         <motion.p
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mb-4 text-xs font-bold uppercase tracking-[0.2em] text-story-accent"
+          transition={{ duration: 0.5, ease: easeOut }}
+          className="mb-4 text-xs font-bold uppercase tracking-[0.25em] text-[#E88D5B]"
         >
-          Neighborhood Storyteller
+          Terengganu Student Rentals
         </motion.p>
 
         <motion.h1
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 32 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.08 }}
+          transition={{ duration: 0.6, delay: 0.1, ease: easeOut }}
           className="font-display text-4xl leading-tight text-white sm:text-5xl lg:text-6xl"
         >
-          Find a Home, Not Just a House.
+          Find Your Student Home
         </motion.h1>
 
         <motion.p
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 28 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.16 }}
-          className="mt-5 max-w-2xl text-base text-white/88 sm:text-lg"
+          transition={{ duration: 0.55, delay: 0.2, ease: easeOut }}
+          className="mt-5 max-w-2xl text-base text-white/90 sm:text-lg"
         >
-          Skip the broker fees. Verified listings near UMT &amp; UniSZA, virtual tours, and instant
-          booking for Terengganu students.
+          Skip the broker fees. Verified listings near UMT, UniSZA, IPGM, and ILPKT.
         </motion.p>
 
-        <motion.form
+        <motion.div
+          initial={{ opacity: 0, y: 32 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.32, ease: easeOut }}
+          className="mt-10"
+        >
+          <motion.button
+            type="button"
+            variants={hoverButton}
+            initial="rest"
+            whileHover="hover"
+            whileTap="tap"
+            onClick={() => navigate('/properties')}
+            className="inline-flex items-center gap-2 rounded-full bg-[#E88D5B] px-8 py-4 text-base font-bold text-[#2D3748] shadow-xl shadow-[#E88D5B]/40 transition hover:shadow-[#E88D5B]/60"
+          >
+            <span aria-hidden="true">🔍</span>
+            Find My Next Home
+          </motion.button>
+        </motion.div>
+
+        <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.28 }}
-          onSubmit={handleSubmit}
-          className="mt-10 w-full max-w-4xl rounded-2xl bg-white p-3 shadow-2xl shadow-black/20 sm:p-4"
+          transition={{ duration: 0.6, delay: 0.5, ease: easeOut }}
+          className="mt-14 grid w-full max-w-3xl grid-cols-3 gap-6 border-t border-white/20 pt-10"
         >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr_auto] lg:items-end">
-            <label className="block text-left">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-story-primary/60">
-                Location
-              </span>
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Campus, area, or keyword"
-                className="w-full rounded-xl border border-story-primary/10 bg-story-bg px-4 py-3 text-sm text-story-primary outline-none ring-story-accent/40 focus:ring-2"
+          {statsLoading ? (
+            <>
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="mx-auto h-14 w-20 animate-pulse rounded-lg bg-white/20" />
+              ))}
+            </>
+          ) : (
+            <>
+              <CountUpStat end={propertyCount} suffix="+" label="Properties" />
+              <CountUpStat end={studentCount} suffix="+" label="Students" />
+              <CountUpStat
+                end={averageRating ?? 0}
+                suffix={averageRating == null ? '' : ''}
+                decimals={averageRating == null ? 0 : 1}
+                label="Rating"
+                displayValue={averageRating == null ? '—' : undefined}
               />
-            </label>
-            <label className="block text-left">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-story-primary/60">
-                Move-in Date
-              </span>
-              <input
-                type="date"
-                value={moveInDate}
-                onChange={(e) => setMoveInDate(e.target.value)}
-                className="w-full rounded-xl border border-story-primary/10 bg-story-bg px-4 py-3 text-sm text-story-primary outline-none ring-story-accent/40 focus:ring-2"
-              />
-            </label>
-            <label className="block text-left">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-story-primary/60">
-                Max Price (RM)
-              </span>
-              <input
-                type="number"
-                min="0"
-                value={maxPrice}
-                onChange={(e) => setMaxPrice(e.target.value)}
-                placeholder="e.g. 800"
-                className="w-full rounded-xl border border-story-primary/10 bg-story-bg px-4 py-3 text-sm text-story-primary outline-none ring-story-accent/40 focus:ring-2"
-              />
-            </label>
-            <button
-              type="submit"
-              className="h-[46px] w-full rounded-xl bg-story-primary px-6 py-3 text-sm font-bold text-white transition hover:scale-[1.03] hover:bg-story-primary/90 lg:h-auto lg:min-h-[46px]"
-            >
-              Find My Next Home
-            </button>
-          </div>
-        </motion.form>
+            </>
+          )}
+        </motion.div>
       </div>
     </section>
   )

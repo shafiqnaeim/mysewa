@@ -3,10 +3,27 @@ import AdminLayout from '../components/AdminLayout'
 import { useAdminGuard } from '../hooks/useAdminGuard'
 import { useToast } from '../context/ToastContext'
 import { createUniversity } from '../utils/universitiesApi'
-import AdminDatabase from './dashboard/AdminDatabase'
+import AdminDatabase, { DbStatusBadge } from './dashboard/AdminDatabase'
 
 const PAGE_SIZE = 10
 const FETCH_SIZE = 200
+
+function formatDbDate(iso) {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return String(iso)
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  } catch {
+    return '—'
+  }
+}
+
+function formatPrice(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return '—'
+  return `RM ${n.toLocaleString('en-MY')}`
+}
 
 const TABS = [
   { id: 'users', label: 'Users', apiResource: 'users' },
@@ -28,11 +45,43 @@ const TABLE_META = {
     canDelete: false,
     columns: [
       { key: 'id', label: 'ID', sortable: true },
+      { key: 'fullName', label: 'User', sortable: true },
       { key: 'email', label: 'Email', sortable: true },
-      { key: 'fullName', label: 'Name', sortable: true },
-      { key: 'role', label: 'Role', sortable: true },
-      { key: 'accountStatus', label: 'Account', sortable: true },
-      { key: 'verified', label: 'Verified', sortable: true, render: (r) => (r.verified ? 'Yes' : 'No') },
+      {
+        key: 'role',
+        label: 'Role',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.role} variant="role" />,
+      },
+      {
+        key: 'documentVerificationStatus',
+        label: 'Identity',
+        sortable: true,
+        render: (r) =>
+          String(r.role || '').toLowerCase() === 'admin' ? (
+            <span className="text-xs text-[#9CA3AF]">—</span>
+          ) : (
+            <DbStatusBadge value={r.documentVerificationStatus} variant="identity" />
+          ),
+      },
+      {
+        key: 'accountStatus',
+        label: 'Status',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.accountStatus || 'active'} variant="account" />,
+      },
+      {
+        key: 'verified',
+        label: 'Email',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.verified} variant="email" />,
+      },
+      {
+        key: 'createdAt',
+        label: 'Joined',
+        sortable: true,
+        render: (r) => formatDbDate(r.createdAt),
+      },
     ],
   },
   properties: {
@@ -41,11 +90,26 @@ const TABLE_META = {
     canDelete: true,
     columns: [
       { key: 'id', label: 'ID', sortable: true },
-      { key: 'landlordId', label: 'Landlord', sortable: true },
       { key: 'name', label: 'Name', sortable: true },
       { key: 'city', label: 'City', sortable: true },
-      { key: 'status', label: 'Status', sortable: true },
-      { key: 'price', label: 'Price', sortable: true },
+      {
+        key: 'status',
+        label: 'Status',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.status} variant="property" />,
+      },
+      {
+        key: 'price',
+        label: 'Price',
+        sortable: true,
+        render: (r) => formatPrice(r.price),
+      },
+      {
+        key: 'createdAt',
+        label: 'Listed',
+        sortable: true,
+        render: (r) => formatDbDate(r.createdAt),
+      },
     ],
     editFields: [
       { key: 'name', label: 'Name', required: true },
@@ -66,9 +130,24 @@ const TABLE_META = {
       { key: 'id', label: 'ID', sortable: true },
       { key: 'propertyId', label: 'Property', sortable: true },
       { key: 'studentId', label: 'Student', sortable: true },
-      { key: 'status', label: 'Status', sortable: true },
-      { key: 'preferredMoveIn', label: 'Move in', sortable: true },
-      { key: 'createdAt', label: 'Created', sortable: true },
+      {
+        key: 'status',
+        label: 'Status',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.status} variant="booking" />,
+      },
+      {
+        key: 'preferredMoveIn',
+        label: 'Move in',
+        sortable: true,
+        render: (r) => formatDbDate(r.preferredMoveIn),
+      },
+      {
+        key: 'createdAt',
+        label: 'Created',
+        sortable: true,
+        render: (r) => formatDbDate(r.createdAt),
+      },
     ],
     editFields: [
       {
@@ -87,10 +166,25 @@ const TABLE_META = {
     columns: [
       { key: 'id', label: 'ID', sortable: true },
       { key: 'applicationId', label: 'Booking', sortable: true },
-      { key: 'amount', label: 'Amount', sortable: true },
+      {
+        key: 'amount',
+        label: 'Amount',
+        sortable: true,
+        render: (r) => formatPrice(r.amount),
+      },
       { key: 'type', label: 'Type', sortable: true },
-      { key: 'status', label: 'Status', sortable: true },
-      { key: 'createdAt', label: 'Date', sortable: true },
+      {
+        key: 'status',
+        label: 'Status',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.status} variant="payment" />,
+      },
+      {
+        key: 'createdAt',
+        label: 'Date',
+        sortable: true,
+        render: (r) => formatDbDate(r.createdAt),
+      },
     ],
     editFields: [
       {
@@ -117,7 +211,12 @@ const TABLE_META = {
         sortable: false,
         render: (r) => (String(r.comment || '').length > 48 ? `${String(r.comment).slice(0, 48)}…` : r.comment || '—'),
       },
-      { key: 'createdAt', label: 'Created', sortable: true },
+      {
+        key: 'createdAt',
+        label: 'Created',
+        sortable: true,
+        render: (r) => formatDbDate(r.createdAt),
+      },
     ],
     editFields: [
       { key: 'rating', label: 'Rating (1-5)', type: 'number', required: true },
@@ -138,7 +237,12 @@ const TABLE_META = {
       { key: 'id', label: 'ID', sortable: true },
       { key: 'code', label: 'Code', sortable: true },
       { key: 'name', label: 'Name', sortable: true },
-      { key: 'active', label: 'Active', sortable: true, render: (r) => (r.active ? 'Yes' : 'No') },
+      {
+        key: 'active',
+        label: 'Status',
+        sortable: true,
+        render: (r) => <DbStatusBadge value={r.active} variant="active" />,
+      },
       { key: 'city', label: 'City', sortable: true },
     ],
     editFields: [
@@ -212,6 +316,22 @@ function defaultFormForFields(fields, row) {
   return form
 }
 
+function isProtectedRow(tab, row) {
+  if (tab === 'users' && String(row.role || '').toLowerCase() === 'admin') return true
+  return false
+}
+
+function getRecordLabel(tab, row) {
+  if (!row) return 'this record'
+  if (tab === 'users') return row.fullName || row.email || `User #${row.id}`
+  if (tab === 'properties') return row.name || `Property #${row.id}`
+  if (tab === 'applications') return `Booking #${row.id}`
+  if (tab === 'payments') return `Payment #${row.id}`
+  if (tab === 'reviews') return `Review #${row.id}`
+  if (tab === 'universities') return row.name || row.code || `University #${row.id}`
+  return `Record #${row.id}`
+}
+
 export default function AdminDatabasePage() {
   const { loading, error, token } = useAdminGuard()
   const { pushToast } = useToast()
@@ -229,6 +349,7 @@ export default function AdminDatabasePage() {
   const [modalRow, setModalRow] = useState(null)
   const [modalForm, setModalForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const meta = TABLE_META[activeTab]
   const apiResource = TABS.find((t) => t.id === activeTab)?.apiResource || activeTab
@@ -264,6 +385,7 @@ export default function AdminDatabasePage() {
     setSortDir('desc')
     setModalMode(null)
     setModalRow(null)
+    setDeleteTarget(null)
   }, [activeTab])
 
   const filteredRows = useMemo(() => {
@@ -279,9 +401,9 @@ export default function AdminDatabasePage() {
     return sorted.map((row) => ({
       ...row,
       _canEdit: meta.canEdit,
-      _canDelete: meta.canDelete,
+      _canDelete: meta.canDelete && !isProtectedRow(activeTab, row),
     }))
-  }, [allRows, search, sortKey, sortDir, meta.canEdit, meta.canDelete])
+  }, [allRows, search, sortKey, sortDir, meta.canEdit, meta.canDelete, activeTab])
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
 
@@ -411,23 +533,38 @@ export default function AdminDatabasePage() {
     }
   }
 
-  async function deleteRow(row) {
-    if (!token) return
-    const label = TABS.find((t) => t.id === activeTab)?.label || 'row'
-    if (!window.confirm(`Delete this ${label} record #${row.id}?`)) return
+  async function confirmDelete() {
+    if (!token || !deleteTarget) return
+    setSaving(true)
     try {
-      const res = await fetch(`/api/v1/admin/database/${apiResource}/${row.id}`, {
+      const res = await fetch(`/api/v1/admin/database/${apiResource}/${deleteTarget.id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
       const data = await readJson(res)
       if (!res.ok) throw new Error(data.message || `Delete failed (${res.status})`)
       pushToast({ message: 'Deleted.', type: 'success' })
-      if (modalRow?.id === row.id) closeModal()
+      if (modalRow?.id === deleteTarget.id) closeModal()
+      setDeleteTarget(null)
       loadRows()
     } catch (e) {
       pushToast({ message: e.message || 'Delete failed.', type: 'error' })
+    } finally {
+      setSaving(false)
     }
+  }
+
+  function openDelete(row) {
+    if (isProtectedRow(activeTab, row)) {
+      pushToast({ message: 'Admin accounts cannot be deleted from here.', type: 'error' })
+      return
+    }
+    setDeleteTarget(row)
+  }
+
+  function cancelDelete() {
+    if (saving) return
+    setDeleteTarget(null)
   }
 
   function exportRows() {
@@ -506,7 +643,10 @@ export default function AdminDatabasePage() {
         modalTitle={modalTitle}
         modalFields={modalFields}
         modalForm={modalForm}
+        editingId={modalMode === 'edit' ? modalRow?.id : null}
         saving={saving}
+        deleteTarget={deleteTarget}
+        deleteRecordLabel={getRecordLabel(activeTab, deleteTarget)}
         onTabChange={setActiveTab}
         onSearchChange={(value) => {
           setSearch(value)
@@ -516,7 +656,9 @@ export default function AdminDatabasePage() {
         onPageChange={setPage}
         onAdd={openAdd}
         onEdit={openEdit}
-        onDelete={deleteRow}
+        onDelete={openDelete}
+        onDeleteConfirm={confirmDelete}
+        onDeleteCancel={cancelDelete}
         onExportCsv={handleExportCsv}
         onExportJson={handleExportJson}
         onModalChange={handleModalChange}

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { formatPropertyLocationLine } from '../../utils/propertyDisplay'
 import { formatDepositAmount, isDepositPaid, resolveApplicationDeposit } from '../../utils/propertyDeposit'
 import { LandlordMessagePreview } from '../../components/common/NotificationToast'
+import StudentRentalHistory from '../../components/student/StudentRentalHistory'
+import { canLeaveReview } from '../../utils/reviewEligibility'
 import {
   canPayDeposit,
   getApplicationDisplayKey,
@@ -83,11 +85,12 @@ function StatCard({ label, children }) {
   )
 }
 
-function BookingCard({ application, propertyById, onViewDetails, onPayDeposit }) {
+function BookingCard({ application, propertyById, onViewDetails, onPayDeposit, onLeaveReview, reviewedPropertyIds }) {
   const status = getBookingStatusBadge(application)
   const paid = isDepositPaid(application)
   const moveOut = application.leaseEnd || application.leaseEndDate || application.lease_end
   const showPayDeposit = canPayDeposit(application)
+  const showLeaveReview = canLeaveReview(application, reviewedPropertyIds)
   const depositValue = resolveApplicationDeposit(application)
   const depositFormatted = formatDepositAmount(depositValue)
   const address = resolvePropertyAddress(application, propertyById)
@@ -150,6 +153,16 @@ function BookingCard({ application, propertyById, onViewDetails, onPayDeposit })
             Pay Deposit
           </button>
         ) : null}
+        {showLeaveReview ? (
+          <button
+            type="button"
+            onClick={() => onLeaveReview?.(application)}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#6C2BD9] px-5 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-[#5B21B6] hover:shadow-lg"
+          >
+            <span aria-hidden="true">✍️</span>
+            Leave a Review
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onViewDetails?.(application)}
@@ -198,7 +211,9 @@ export default function StudentBookings({
   loading = false,
   onViewDetails,
   onPayDeposit,
+  onLeaveReview,
   onBrowse,
+  reviewedPropertyIds = new Set(),
 }) {
   const [filter, setFilter] = useState('all')
 
@@ -238,6 +253,13 @@ export default function StudentBookings({
           </div>
         </header>
 
+        <StudentRentalHistory
+          applications={applications}
+          propertyById={propertyById}
+          reviewedPropertyIds={reviewedPropertyIds}
+          onLeaveReview={onLeaveReview}
+        />
+
         <section>
           {loading ? (
             <div className="rounded-xl border border-[#E2E8F0] bg-white p-12 text-center shadow-sm">
@@ -253,6 +275,8 @@ export default function StudentBookings({
                 propertyById={propertyById}
                 onViewDetails={onViewDetails}
                 onPayDeposit={onPayDeposit}
+                onLeaveReview={onLeaveReview}
+                reviewedPropertyIds={reviewedPropertyIds}
               />
             ))
           )}

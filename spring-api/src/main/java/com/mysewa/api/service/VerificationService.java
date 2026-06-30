@@ -37,15 +37,18 @@ public class VerificationService {
     private final UserAccountRepository userAccountRepository;
     private final UserVerificationDocumentRepository documentRepository;
     private final IcCryptoService icCryptoService;
+    private final NotificationService notificationService;
 
     public VerificationService(
             UserAccountRepository userAccountRepository,
             UserVerificationDocumentRepository documentRepository,
-            IcCryptoService icCryptoService
+            IcCryptoService icCryptoService,
+            NotificationService notificationService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.documentRepository = documentRepository;
         this.icCryptoService = icCryptoService;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -177,6 +180,8 @@ public class VerificationService {
         user.setUpdatedAt(now);
         userAccountRepository.save(user);
 
+        notificationService.notifyIdentityVerificationSubmitted(user.getId(), user.getRole());
+
         return Map.of(
                 "documentVerificationStatus", "pending_review",
                 "submittedAt", ISO.format(now)
@@ -231,7 +236,9 @@ public class VerificationService {
         user.setDocumentVerificationStatus("verified");
         user.setVerificationRejectionReason(null);
         user.setUpdatedAt(LocalDateTime.now());
-        return userAccountRepository.save(user);
+        UserAccount saved = userAccountRepository.save(user);
+        notificationService.notifyIdentityVerificationApproved(saved.getId(), saved.getRole());
+        return saved;
     }
 
     @Transactional
@@ -241,7 +248,9 @@ public class VerificationService {
         user.setDocumentVerificationStatus("rejected");
         user.setVerificationRejectionReason(blankToNull(reason));
         user.setUpdatedAt(LocalDateTime.now());
-        return userAccountRepository.save(user);
+        UserAccount saved = userAccountRepository.save(user);
+        notificationService.notifyIdentityVerificationRejected(saved.getId(), saved.getRole(), reason);
+        return saved;
     }
 
     private Map<String, Object> toAdminSummary(UserAccount user) {

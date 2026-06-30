@@ -8,6 +8,8 @@ function statusLabel(status) {
       return { text: 'Overdue', className: 'bg-red-100 text-red-800' }
     case 'pending':
       return { text: 'Pending', className: 'bg-yellow-100 text-yellow-800' }
+    case 'pending_confirmation':
+      return { text: 'Pending Confirmation', className: 'bg-amber-100 text-amber-900' }
     case 'unavailable':
       return { text: 'Unavailable', className: 'bg-gray-100 text-gray-600' }
     default:
@@ -33,6 +35,7 @@ export default function RentTrackerMonthDetails({
   onLandlordManage,
   onStudentPay,
   onContactLandlord,
+  onViewReceipt,
 }) {
   if (!cell) return null
 
@@ -115,10 +118,10 @@ export default function RentTrackerMonthDetails({
               <button
                 type="button"
                 onClick={onStudentPay}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#6C2BD9] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#5B21B6]"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#E88D5B] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#d97a48]"
               >
-                <span aria-hidden="true">💳</span>
-                Log Payment
+                <span aria-hidden="true">✅</span>
+                Mark as Paid
               </button>
             ) : null}
             <button
@@ -132,25 +135,25 @@ export default function RentTrackerMonthDetails({
           </>
         ) : null}
 
-        {receiptUrl ? (
+        {cell.paid ? (
+          <button
+            type="button"
+            onClick={() => onViewReceipt?.()}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#2D3748] transition hover:bg-[#F7FAFC]"
+          >
+            <span aria-hidden="true">📄</span>
+            {role === 'student' ? 'Download Receipt' : 'View Receipt'}
+          </button>
+        ) : receiptUrl ? (
           <a
             href={receiptHref(receiptUrl)}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#2D3748] transition hover:bg-[#F7FAFC]"
           >
-            <span aria-hidden="true">📄</span>
-            {role === 'student' ? 'Download Receipt' : 'View Receipt'}
+            <span aria-hidden="true">📎</span>
+            View uploaded proof
           </a>
-        ) : cell.paid ? (
-          <button
-            type="button"
-            disabled
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#E2E8F0] bg-[#F7FAFC] px-4 py-2.5 text-sm font-semibold text-[#A0AEC0]"
-          >
-            <span aria-hidden="true">📄</span>
-            View Receipt
-          </button>
         ) : null}
       </div>
     </div>

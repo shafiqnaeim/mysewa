@@ -2,12 +2,30 @@ import { useEffect, useRef } from 'react'
 import { createWorker } from 'tesseract.js'
 import { extractIcDataFromText } from '../utils/icOcrUtils'
 
+function mapTesseractProgress(message) {
+  const status = message?.status || ''
+  const progress = message?.progress ?? 0
+  if (status === 'loading tesseract core') return 10
+  if (status === 'initializing tesseract') return 20
+  if (status === 'loading language traineddata') return 35
+  if (status === 'initialized api') return 45
+  if (status === 'recognizing text') return Math.min(99, 50 + Math.round(progress * 50))
+  return null
+}
+
 /**
  * Headless Tesseract runner for Malaysian IC images.
  * Renders progress via onProgress(0–100).
  */
 export default function OCRProcessor({ imageSource, active = true, onProgress, onComplete, onError }) {
   const runIdRef = useRef(0)
+  const onProgressRef = useRef(onProgress)
+  const onCompleteRef = useRef(onComplete)
+  const onErrorRef = useRef(onError)
+
+  onProgressRef.current = onProgress
+  onCompleteRef.current = onComplete
+  onErrorRef.current = onError
 
   useEffect(() => {
     if (!imageSource || !active) return undefined
@@ -19,27 +37,26 @@ export default function OCRProcessor({ imageSource, active = true, onProgress, o
 
     async function runOcr() {
       try {
-        onProgress?.(0)
+        onProgressRef.current?.(5)
         worker = await createWorker('eng', 1, {
           logger: (message) => {
             if (cancelled || runIdRef.current !== runId) return
-            if (message.status === 'recognizing text') {
-              onProgress?.(Math.min(99, Math.round((message.progress || 0) * 100)))
-            }
+            const mapped = mapTesseractProgress(message)
+            if (mapped != null) onProgressRef.current?.(mapped)
           },
         })
         if (cancelled || runIdRef.current !== runId) return
 
-        onProgress?.(10)
+        onProgressRef.current?.(50)
         const { data } = await worker.recognize(imageSource)
         if (cancelled || runIdRef.current !== runId) return
 
-        onProgress?.(100)
+        onProgressRef.current?.(100)
         const extracted = extractIcDataFromText(data.text || '')
-        onComplete?.(extracted)
+        onCompleteRef.current?.(extracted)
       } catch (error) {
         if (!cancelled && runIdRef.current === runId) {
-          onError?.(error instanceof Error ? error : new Error('OCR failed'))
+          onErrorRef.current?.(error instanceof Error ? error : new Error('OCR failed'))
         }
       } finally {
         try {
@@ -57,7 +74,7 @@ export default function OCRProcessor({ imageSource, active = true, onProgress, o
       runIdRef.current += 1
       void worker?.terminate()
     }
-  }, [imageSource, active, onProgress, onComplete, onError])
+  }, [imageSource, active])
 
   return null
 }

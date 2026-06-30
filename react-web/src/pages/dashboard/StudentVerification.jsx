@@ -1,74 +1,19 @@
 import VerificationUpload from '../../components/VerificationUpload'
+import {
+  VERIFICATION_STATUS_LABELS,
+  verificationStatusClass,
+} from '../../utils/verificationStatus'
 
-function ProgressDots({ steps }) {
+function ProgressDots({ steps, activeColor = '#6C2BD9' }) {
   const dots = [0, 1, 2, 3]
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-sm" aria-hidden="true">
       {dots.map((i) => (
-        <span key={i} className={i < steps ? 'text-[#6C2BD9]' : 'text-[#D1D5DB]'}>
+        <span key={i} style={{ color: i < steps ? activeColor : '#D1D5DB' }}>
           {i < steps ? '●' : '○'}
         </span>
       ))}
     </span>
-  )
-}
-
-function DocumentCard({ doc, previewUrl, onChooseFile, inputRef }) {
-  const uploaded = Boolean(previewUrl)
-
-  return (
-    <article className="flex flex-col rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
-      <p className="text-3xl" aria-hidden="true">
-        {doc.emoji}
-      </p>
-      <h3 className="mt-3 text-lg font-bold text-[#1A1A2E]">{doc.title}</h3>
-      <p className="mt-2 flex-1 text-sm text-[#6B7280]">{doc.description}</p>
-
-      <button
-        type="button"
-        onClick={() => onChooseFile(doc.key)}
-        className="mt-4 flex h-36 w-full items-center justify-center overflow-hidden rounded-lg border-2 border-dashed border-[#E2E8F0] bg-[#FAFAFA] transition hover:border-[#6C2BD9] hover:bg-[#F9F7FF]"
-        aria-label={`Upload ${doc.title}`}
-      >
-        {previewUrl ? (
-          <img src={previewUrl} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <span className="text-sm text-[#9CA3AF]">Tap to upload</span>
-        )}
-      </button>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="sr-only"
-        aria-hidden="true"
-        tabIndex={-1}
-        onChange={(e) => onChooseFile(doc.key, e)}
-      />
-
-      <p className="mt-3 text-sm font-semibold">
-        {uploaded ? (
-          <span className="text-[#10B981]">
-            <span aria-hidden="true">✅ </span>
-            Uploaded
-          </span>
-        ) : (
-          <span className="text-[#F59E0B]">
-            <span aria-hidden="true">⏳ </span>
-            Pending
-          </span>
-        )}
-      </p>
-
-      <button
-        type="button"
-        onClick={() => onChooseFile(doc.key)}
-        className="mt-3 w-full rounded-lg border border-[#6C2BD9] bg-white px-4 py-2.5 text-sm font-semibold text-[#6C2BD9] hover:bg-[#F3F0FF]"
-      >
-        {uploaded ? 'Replace File' : 'Choose File'}
-      </button>
-    </article>
   )
 }
 
@@ -93,9 +38,36 @@ const DOCUMENTS = [
   },
 ]
 
+const ACCENT = '#6C2BD9'
+
+function VerificationStepChips({ icConfirmed, matricUrl, selfieUrl }) {
+  const steps = [
+    { key: 'ic', done: icConfirmed, label: 'IC' },
+    { key: 'matric', done: Boolean(matricUrl), label: 'Matric' },
+    { key: 'selfie', done: Boolean(selfieUrl), label: 'Selfie' },
+  ]
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      {steps.map((step) => (
+        <span
+          key={step.key}
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            step.done
+              ? 'bg-[#F0FFF4] text-[#38A169] ring-1 ring-[#C6F6D5]'
+              : 'bg-[#F7FAFC] text-[#718096] ring-1 ring-[#E2E8F0]'
+          }`}
+        >
+          {step.done ? `${step.label} ✓` : step.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export default function StudentVerification({
-  verificationState = 'pending',
-  verificationLabel = 'Pending',
+  verificationState = 'not_submitted',
+  verificationLabel = VERIFICATION_STATUS_LABELS.not_submitted,
+  rejectionReason = '',
   progressSteps = 0,
   progressPercent = 0,
   icConfirmed = false,
@@ -103,23 +75,25 @@ export default function StudentVerification({
   registeredIc = '',
   matricUrl = '',
   selfieUrl = '',
+  fileMeta = {},
   submittedAt = null,
   submitting = false,
-  matricInputRef,
-  selfieInputRef,
-  onChooseFile,
+  icProcessing = false,
+  onIcProcessingChange,
+  onDocumentUpload,
+  onDocumentClear,
   onIcConfirmed,
   onIcClear,
   onSubmit,
   onClearAll,
 }) {
   const isVerified = verificationState === 'verified'
-  const statusEmoji = isVerified ? '✅' : verificationState === 'rejected' ? '❌' : '⚠️'
+  const isRejected = verificationState === 'rejected'
+  const isUnderReview = verificationState === 'under_review'
+  const allUploaded = Boolean(icConfirmed && matricUrl && selfieUrl)
+  const canSubmit = allUploaded && !icProcessing && !submitting && !isVerified && !isUnderReview
 
   const previews = { matric: matricUrl, selfie: selfieUrl }
-  const refs = { matric: matricInputRef, selfie: selfieInputRef }
-
-  const allUploaded = Boolean(icConfirmed && matricUrl && selfieUrl)
 
   return (
     <div className="min-h-screen w-full bg-[#FAFAFA] font-sans text-[#1A1A2E]">
@@ -136,28 +110,42 @@ export default function StudentVerification({
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-bold text-[#1A1A2E]">Verification Status</p>
-              <p className="mt-1 text-sm text-[#4B5563]">
-                <span aria-hidden="true">{statusEmoji} </span>
+              <p className={`mt-1 text-sm font-semibold ${verificationStatusClass(verificationState)}`}>
                 {verificationLabel}
               </p>
-              {submittedAt && !isVerified ? (
+              {submittedAt && isUnderReview ? (
                 <p className="mt-1 text-xs text-[#6B7280]">
                   Submitted {new Date(submittedAt).toLocaleString()}
                 </p>
               ) : null}
             </div>
             <div className="text-right">
-              <ProgressDots steps={isVerified ? 4 : progressSteps} />
+              <ProgressDots steps={isVerified ? 4 : progressSteps} activeColor={ACCENT} />
               <p className="mt-1 text-sm font-semibold text-[#6C2BD9]">
                 {isVerified ? '100' : progressPercent}% Complete
               </p>
             </div>
           </div>
+
+          {isRejected ? (
+            <div className="mt-4 rounded-lg border border-[#FECACA] bg-[#FEF2F2] p-4">
+              <p className="text-sm font-semibold text-[#B91C1C]">
+                <span aria-hidden="true">❌ </span>
+                Verification Rejected{rejectionReason ? `: ${rejectionReason}` : ''}
+              </p>
+              <p className="mt-1 text-xs text-[#7F1D1D]">
+                Update your documents and submit again for review.
+              </p>
+            </div>
+          ) : null}
+
+          <VerificationStepChips icConfirmed={icConfirmed} matricUrl={matricUrl} selfieUrl={selfieUrl} />
         </section>
 
         <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
           <VerificationUpload
             variant="ic"
+            accentColor={ACCENT}
             title={DOCUMENTS[0].title}
             description={DOCUMENTS[0].description}
             emoji={DOCUMENTS[0].emoji}
@@ -167,17 +155,22 @@ export default function StudentVerification({
             icConfirmed={icConfirmed}
             onIcConfirmed={onIcConfirmed}
             onClear={onIcClear}
+            onProcessingChange={onIcProcessingChange}
           />
           {DOCUMENTS.filter((doc) => doc.key !== 'ic').map((doc) => (
-            <DocumentCard
+            <VerificationUpload
               key={doc.key}
-              doc={doc}
+              variant="document"
+              accentColor={ACCENT}
+              title={doc.title}
+              description={doc.description}
+              emoji={doc.emoji}
               previewUrl={previews[doc.key]}
-              inputRef={refs[doc.key]}
-              onChooseFile={(key, e) => {
-                if (e?.target?.files) onChooseFile(key, e)
-                else onChooseFile(key)
-              }}
+              fileName={fileMeta[doc.key]?.fileName || ''}
+              fileSize={fileMeta[doc.key]?.size}
+              disabled={submitting || isVerified}
+              onFileSelected={(file) => onDocumentUpload?.(doc.key, file)}
+              onClear={() => onDocumentClear?.(doc.key)}
             />
           ))}
         </section>
@@ -200,23 +193,38 @@ export default function StudentVerification({
           </ul>
         </section>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-          <button
-            type="button"
-            disabled={!allUploaded || submitting || isVerified}
-            onClick={onSubmit}
-            className="rounded-lg bg-[#6C2BD9] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? 'Submitting…' : isVerified ? 'Verified' : 'Submit for Verification'}
-          </button>
-          <button
-            type="button"
-            disabled={submitting || isVerified}
-            onClick={onClearAll}
-            className="rounded-lg border border-[#6C2BD9] bg-white px-6 py-2.5 text-sm font-semibold text-[#6C2BD9] hover:bg-[#F3F0FF] disabled:opacity-50"
-          >
-            Clear All Files
-          </button>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button
+              type="button"
+              disabled={!canSubmit}
+              onClick={onSubmit}
+              className="rounded-lg bg-[#6C2BD9] px-6 py-2.5 text-sm font-semibold text-white hover:bg-[#5B21B6] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting
+                ? 'Submitting…'
+                : isVerified
+                  ? 'Verified'
+                  : isUnderReview
+                    ? 'Under Review'
+                    : 'Submit for Verification'}
+            </button>
+            <button
+              type="button"
+              disabled={submitting || isVerified}
+              onClick={onClearAll}
+              className="rounded-lg border border-[#6C2BD9] bg-white px-6 py-2.5 text-sm font-semibold text-[#6C2BD9] hover:bg-[#F3F0FF] disabled:opacity-50"
+            >
+              Clear All Files
+            </button>
+          </div>
+          {!canSubmit && !isVerified && !isUnderReview ? (
+            <p className="text-sm text-[#6B7280]">
+              {icProcessing
+                ? 'Please wait while your IC is being processed…'
+                : 'Please upload all documents to submit'}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

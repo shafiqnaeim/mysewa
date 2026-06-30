@@ -127,10 +127,20 @@ CREATE TABLE IF NOT EXISTS application_rent_month_student_logs (
 
 CREATE TABLE IF NOT EXISTS property_reviews (
   id INT AUTO_INCREMENT PRIMARY KEY,
+  booking_id INT NULL,
   property_id INT NOT NULL,
   student_id INT NOT NULL,
-  rating INT NOT NULL,
-  review_body TEXT NOT NULL,
+  rating_cleanliness INT NOT NULL DEFAULT 0,
+  rating_condition INT NOT NULL DEFAULT 0,
+  rating_amenities INT NOT NULL DEFAULT 0,
+  rating_landlord INT NOT NULL DEFAULT 0,
+  rating_location INT NOT NULL DEFAULT 0,
+  rating_value INT NOT NULL DEFAULT 0,
+  rating_overall INT NOT NULL DEFAULT 0,
+  category_comments JSON NULL,
+  public_comment TEXT NULL,
+  photos JSON NULL,
+  is_anonymous TINYINT(1) NOT NULL DEFAULT 0,
   created_at DATETIME NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE KEY uk_property_reviews_property_student (property_id, student_id),
   INDEX idx_property_reviews_property (property_id),
@@ -144,8 +154,34 @@ CREATE TABLE IF NOT EXISTS property_reviews (
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- If an older dev DB created `property_reviews` with a column named `comment`, rename it to match the API entity:
--- ALTER TABLE property_reviews CHANGE COLUMN comment review_body TEXT NOT NULL;
+CREATE TABLE IF NOT EXISTS maintenance_reports (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  student_id INT NOT NULL,
+  property_id INT NOT NULL,
+  application_id INT NOT NULL,
+  category VARCHAR(50) NOT NULL,
+  description TEXT NOT NULL,
+  photo_url VARCHAR(1024) NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  landlord_notes TEXT NULL,
+  submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  acknowledged_at DATETIME NULL,
+  resolved_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NULL ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_maintenance_reports_student (student_id),
+  INDEX idx_maintenance_reports_property (property_id),
+  INDEX idx_maintenance_reports_status (status),
+  CONSTRAINT fk_maintenance_reports_property
+    FOREIGN KEY (property_id) REFERENCES properties(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_maintenance_reports_student
+    FOREIGN KEY (student_id) REFERENCES users(id)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_maintenance_reports_application
+    FOREIGN KEY (application_id) REFERENCES applications(id)
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS property_tenant_reports (
   id INT AUTO_INCREMENT PRIMARY KEY,

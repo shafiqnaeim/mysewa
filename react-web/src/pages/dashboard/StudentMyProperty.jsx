@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
-import PropertyReviewsSection from '../../components/PropertyReviewsSection'
-import { listPropertyImageUrls } from '../../utils/propertyDisplay'
+import { useEffect, useMemo, useState } from 'react'
+import AvailabilityCalendar from '../../components/AvailabilityCalendar'
+import { ReviewAggregatesPanel, ReviewCard } from '../../components/reviews/MultiCategoryReviewDisplay'
+import { fetchPropertyReviews } from '../../services/reviewService'
+import { formatPropertyLocationLine } from '../../utils/propertyDisplay'
 import { resolvedStudentDepositAmount } from '../../utils/studentApplicationDeposit'
 
 const TABS = [
@@ -37,7 +39,7 @@ function formatApplicationWhen(iso) {
 
 function formatRmMyr(amount) {
   if (amount == null || Number.isNaN(Number(amount))) return '—'
-  return `RM ${Number(amount).toFixed(2)}`
+  return `RM ${Number(amount).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function reportStatusClass(status) {
@@ -62,17 +64,45 @@ function reportImageUrl(url) {
   return s.startsWith('/') ? s : `/${s}`
 }
 
+function propertyStatusBadge(status) {
+  const s = String(status || 'active').toLowerCase()
+  if (s === 'pending' || s === 'pending_review') {
+    return { label: 'Pending', className: 'bg-yellow-100 text-yellow-800' }
+  }
+  if (s === 'active' || s === 'open' || s === 'published' || s === 'available') {
+    return { label: 'Active', className: 'bg-green-100 text-green-800' }
+  }
+  if (s === 'inactive' || s === 'closed' || s === 'unavailable' || s === 'archived') {
+    return { label: 'Inactive', className: 'bg-gray-100 text-gray-800' }
+  }
+  return { label: 'Active', className: 'bg-green-100 text-green-800' }
+}
+
+function StatCard({ icon, label, value }) {
+  return (
+    <div className="rounded-xl border border-[#E2E8F0] bg-[#F7FAFC] px-3 py-4 text-center">
+      <p className="text-xs font-medium text-[#A0AEC0]">
+        <span aria-hidden="true">{icon} </span>
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-semibold leading-snug text-[#2D3748]">{value}</p>
+    </div>
+  )
+}
+
 function RentCalendarPanel({
   primaryApplication,
   payYear,
   yearOptions,
   monthCells,
+  rentMonthRows = [],
   rentCalendarLoading,
   rentCalendarTenancyLine,
   payRentHintMonth,
   onYearChange,
   onMonthClick,
   onLogPayment,
+  onViewMonthReceipt,
 }) {
   if (!primaryApplication) {
     return (
@@ -111,9 +141,9 @@ function RentCalendarPanel({
           <button
             type="button"
             onClick={onLogPayment}
-            className="rounded-lg bg-[#F59E0B] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#D97706]"
+            className="rounded-lg bg-[#E88D5B] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#d97a48]"
           >
-            Log Payment
+            Mark as Paid
           </button>
         </div>
       ) : null}
@@ -144,7 +174,7 @@ function RentCalendarPanel({
               >
                 <span className="block font-semibold">{cell.label}</span>
                 <span className="mt-1 block text-xs">
-                  {cell.paid ? 'Paid' : cell.outsideLease ? '—' : cell.unavailable ? 'N/A' : cell.studentLogged ? 'Logged' : 'Pending'}
+                  {cell.paid ? 'Paid' : cell.outsideLease ? '—' : cell.unavailable ? 'N/A' : cell.studentLogged ? 'Pending Confirmation' : 'Pending'}
                 </span>
               </button>
             ))}
@@ -160,10 +190,66 @@ function RentCalendarPanel({
               Pending
             </li>
             <li className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded bg-[#FEF3C7] border border-[#F59E0B]" aria-hidden="true" />
+              Pending Confirmation
+            </li>
+            <li className="flex items-center gap-2">
               <span className="h-3 w-3 rounded bg-[#F9FAFB] border border-[#E2E8F0]" aria-hidden="true" />
               Outside Tenancy
             </li>
           </ul>
+
+          {rentMonthRows.length > 0 ? (
+            <div className="mt-6 space-y-3 border-t border-[#E2E8F0] pt-5">
+              <p className="text-sm font-semibold text-[#2D3748]">Payment history — {payYear}</p>
+              {rentMonthRows.map((row) => (
+                <div
+                  key={`${payYear}-${row.month}`}
+                  className="rounded-xl border border-[#E2E8F0] bg-[#F7FAFC] px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-[#2D3748]">
+                        <span aria-hidden="true">📆 </span>
+                        {row.monthLabel}
+                      </p>
+                      <p className="mt-1 text-sm text-[#4A5568]">
+                        <span aria-hidden="true">💰 </span>
+                        {formatRmMyr(row.amount)}
+                      </p>
+                      <p
+                        className={`mt-1 text-xs font-semibold ${
+                          row.paid ? 'text-green-700' : 'text-amber-700'
+                        }`}
+                      >
+                        {row.paid ? (
+                          <>
+                            <span aria-hidden="true">✅ </span>
+                            PAID
+                          </>
+                        ) : (
+                          <>
+                            <span aria-hidden="true">⏳ </span>
+                            Pending Confirmation
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    {row.paid ? (
+                      <button
+                        type="button"
+                        onClick={() => onViewMonthReceipt?.(row.month)}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#2D3748] shadow-sm transition hover:border-[#E88D5B] hover:text-[#E88D5B]"
+                      >
+                        <span aria-hidden="true">📄</span>
+                        View Receipt
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </>
       )}
     </div>
@@ -182,6 +268,7 @@ export default function StudentMyProperty({
   payYear,
   yearOptions,
   monthCells,
+  rentMonthRows = [],
   rentCalendarLoading,
   rentCalendarTenancyLine,
   payRentHintMonth,
@@ -196,34 +283,85 @@ export default function StudentMyProperty({
   onPayDeposit,
   onResetDeposit,
   onViewReceipt,
+  onViewAgreement,
+  onContactLandlord,
   onYearChange,
   onMonthClick,
   onLogPayment,
+  onViewMonthReceipt,
   onReportTextChange,
   onReportImageChange,
   onSubmitReport,
   onResolveReport,
+  showLeaveReview = false,
+  onLeaveReview,
 }) {
   const [activeTab, setActiveTab] = useState('payment')
-
-  const coverImage = useMemo(() => {
-    if (!propertyDetail) return null
-    const urls = listPropertyImageUrls(propertyDetail)
-    return urls[0] || null
-  }, [propertyDetail])
+  const [reviewsLoading, setReviewsLoading] = useState(false)
+  const [reviewItems, setReviewItems] = useState([])
+  const [reviewAggregates, setReviewAggregates] = useState(null)
 
   const moveOut =
     primaryApplication?.leaseEnd || primaryApplication?.leaseEndDate || primaryApplication?.lease_end
 
+  const propertyName =
+    propertyDetail?.name || primaryApplication?.propertyName || `Property #${primaryApplication?.propertyId}`
+
+  useEffect(() => {
+    const pid = primaryApplication?.propertyId
+    if (!pid || activeTab !== 'reviews') return
+    let cancelled = false
+    async function loadReviews() {
+      setReviewsLoading(true)
+      try {
+        const data = await fetchPropertyReviews(pid)
+        if (!cancelled) {
+          setReviewItems(Array.isArray(data.items) ? data.items : [])
+          setReviewAggregates(data.aggregates || null)
+        }
+      } catch {
+        if (!cancelled) {
+          setReviewItems([])
+          setReviewAggregates(null)
+        }
+      } finally {
+        if (!cancelled) setReviewsLoading(false)
+      }
+    }
+    loadReviews()
+    return () => {
+      cancelled = true
+    }
+  }, [primaryApplication?.propertyId, activeTab])
+
+  const propertyAddress = useMemo(() => {
+    if (propertyDetail) {
+      const line = formatPropertyLocationLine(propertyDetail)
+      if (line && line !== 'Location not set') return line
+      if (propertyDetail.location) return propertyDetail.location
+    }
+    return primaryApplication?.propertyLocation || null
+  }, [propertyDetail, primaryApplication])
+
+  const statusBadge = propertyStatusBadge(propertyDetail?.status)
+
+  function handleContactLandlord() {
+    if (typeof onContactLandlord === 'function') {
+      onContactLandlord()
+      return
+    }
+    setActiveTab('reports')
+  }
+
   return (
-    <div className="min-h-screen w-full bg-[#FAFAFA] font-sans text-[#1A1A2E]">
+    <div className="min-h-screen w-full bg-[#FAFAFA] font-sans text-[#2D3748]">
       <div className="mx-auto max-w-7xl space-y-6 px-4 py-6">
         <header>
-          <h1 className="text-2xl font-bold text-[#1A1A2E] sm:text-3xl">
+          <h1 className="text-2xl font-bold text-[#2D3748] sm:text-3xl">
             <span aria-hidden="true">🏠 </span>
             My Property
           </h1>
-          <p className="mt-2 text-sm text-[#6B7280]">
+          <p className="mt-2 text-sm text-[#718096]">
             Your tenancy, payments, and communication in one place
           </p>
         </header>
@@ -248,67 +386,71 @@ export default function StudentMyProperty({
           </div>
         ) : (
           <>
-            {/* Summary Card */}
             <section className="rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-6 md:flex-row">
-                {coverImage ? (
-                  <img
-                    src={coverImage}
-                    alt=""
-                    className="h-32 w-full rounded-lg object-cover md:w-48"
-                  />
-                ) : (
-                  <div className="flex h-32 w-full items-center justify-center rounded-lg bg-gray-200 text-sm text-[#6B7280] md:w-48">
-                    {propertyLoading ? 'Loading…' : 'No image'}
-                  </div>
-                )}
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <h2 className="text-xl font-bold text-[#2D3748]">
+                  <span aria-hidden="true">🏠 </span>
+                  {propertyName}
+                </h2>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${statusBadge.className}`}
+                >
+                  <span className="h-2 w-2 rounded-full bg-current opacity-80" aria-hidden="true" />
+                  {statusBadge.label}
+                </span>
+              </div>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-xl font-bold text-[#1A1A2E]">
-                      {propertyDetail?.name || primaryApplication.propertyName || `Property #${primaryApplication.propertyId}`}
-                    </h2>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#D1FAE5] px-2.5 py-1 text-xs font-bold text-[#059669]">
-                      <span aria-hidden="true">✅</span>
-                      Active
-                    </span>
-                  </div>
+              {propertyAddress ? (
+                <p className="mt-3 text-sm text-[#718096]">
+                  <span aria-hidden="true">📍 </span>
+                  {propertyAddress}
+                </p>
+              ) : null}
 
-                  <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Application #</dt>
-                      <dd className="mt-1 font-medium">#{primaryApplication.id}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Move In</dt>
-                      <dd className="mt-1 font-medium">{formatMoveDate(primaryApplication.preferredMoveIn)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Move Out</dt>
-                      <dd className="mt-1 font-medium">{formatMoveDate(moveOut)}</dd>
-                    </div>
-                    {propertyDetail?.location ? (
-                      <div className="sm:col-span-2">
-                        <dt className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Address</dt>
-                        <dd className="mt-1 font-medium">{propertyDetail.location}</dd>
-                      </div>
-                    ) : null}
-                    {propertyDetail?.type ? (
-                      <div>
-                        <dt className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Type</dt>
-                        <dd className="mt-1 font-medium capitalize">{propertyDetail.type}</dd>
-                      </div>
-                    ) : null}
-                    {monthlyRentDisplay ? (
-                      <div>
-                        <dt className="text-xs font-medium uppercase tracking-wide text-[#6B7280]">Monthly Rent</dt>
-                        <dd className="mt-1 font-bold text-[#6C2BD9]">{monthlyRentDisplay}</dd>
-                      </div>
-                    ) : null}
-                  </dl>
-                </div>
+              <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <StatCard
+                  icon="🏠"
+                  label="Type"
+                  value={
+                    propertyDetail?.type
+                      ? String(propertyDetail.type).charAt(0).toUpperCase() +
+                        String(propertyDetail.type).slice(1)
+                      : '—'
+                  }
+                />
+                <StatCard icon="📅" label="Move Out" value={formatMoveDate(moveOut)} />
+                <StatCard icon="💰" label="Rent" value={monthlyRentDisplay || '—'} />
               </div>
             </section>
+
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={handleContactLandlord}
+                className="inline-flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#2D3748] shadow-sm transition hover:border-[#CBD5E0] hover:bg-[#F7FAFC]"
+              >
+                <span aria-hidden="true">💬</span>
+                Contact Landlord
+              </button>
+              <button
+                type="button"
+                onClick={onViewAgreement}
+                className="inline-flex items-center gap-2 rounded-lg border border-[#E2E8F0] bg-white px-4 py-2.5 text-sm font-semibold text-[#2D3748] shadow-sm transition hover:border-[#CBD5E0] hover:bg-[#F7FAFC]"
+              >
+                <span aria-hidden="true">📄</span>
+                View Agreement
+              </button>
+              {showLeaveReview ? (
+                <button
+                  type="button"
+                  onClick={onLeaveReview}
+                  className="inline-flex items-center gap-2 rounded-lg bg-[#E88D5B] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#d97a48]"
+                >
+                  <span aria-hidden="true">⭐</span>
+                  Leave Review
+                </button>
+              ) : null}
+            </div>
 
             {/* Tabs */}
             <div>
@@ -324,8 +466,8 @@ export default function StudentMyProperty({
                       onClick={() => setActiveTab(tab.key)}
                       className={`shrink-0 rounded-t-lg px-4 py-2.5 text-sm font-semibold transition ${
                         active
-                          ? 'bg-[#6C2BD9] text-white'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          ? 'bg-[#E88D5B] text-white'
+                          : 'bg-[#EDF2F7] text-[#718096] hover:bg-[#E2E8F0]'
                       }`}
                     >
                       {tab.label}
@@ -424,30 +566,55 @@ export default function StudentMyProperty({
                         payYear={payYear}
                         yearOptions={yearOptions}
                         monthCells={monthCells}
+                        rentMonthRows={rentMonthRows}
                         rentCalendarLoading={rentCalendarLoading}
                         rentCalendarTenancyLine={rentCalendarTenancyLine}
                         payRentHintMonth={payRentHintMonth}
                         onYearChange={onYearChange}
                         onMonthClick={onMonthClick}
                         onLogPayment={onLogPayment}
+                        onViewMonthReceipt={onViewMonthReceipt}
                       />
                     </section>
                   </div>
                 ) : null}
 
                 {activeTab === 'calendar' ? (
-                  <RentCalendarPanel
-                    primaryApplication={primaryApplication}
-                    payYear={payYear}
-                    yearOptions={yearOptions}
-                    monthCells={monthCells}
-                    rentCalendarLoading={rentCalendarLoading}
-                    rentCalendarTenancyLine={rentCalendarTenancyLine}
-                    payRentHintMonth={payRentHintMonth}
-                    onYearChange={onYearChange}
-                    onMonthClick={onMonthClick}
-                    onLogPayment={onLogPayment}
-                  />
+                  <div className="space-y-10">
+                    <section>
+                      <h3 className="text-lg font-bold text-[#1A1A2E]">
+                        <span aria-hidden="true">📅 </span>
+                        Property Availability
+                      </h3>
+                      <p className="mt-1 text-sm text-[#6B7280]">
+                        Dates locked while your booking is confirmed show in red.
+                      </p>
+                      <div className="mt-4">
+                        <AvailabilityCalendar
+                          propertyId={propertyDetail?.id ?? primaryApplication?.propertyId}
+                          bookingId={primaryApplication?.id}
+                          viewMode="student"
+                          status={propertyDetail?.status}
+                          refreshKey={primaryApplication?.depositPaid ? `paid-${primaryApplication.id}` : 'open'}
+                          hideFooterNote
+                        />
+                      </div>
+                    </section>
+                    <RentCalendarPanel
+                      primaryApplication={primaryApplication}
+                      payYear={payYear}
+                      yearOptions={yearOptions}
+                      monthCells={monthCells}
+                      rentMonthRows={rentMonthRows}
+                      rentCalendarLoading={rentCalendarLoading}
+                      rentCalendarTenancyLine={rentCalendarTenancyLine}
+                      payRentHintMonth={payRentHintMonth}
+                      onYearChange={onYearChange}
+                      onMonthClick={onMonthClick}
+                      onLogPayment={onLogPayment}
+                      onViewMonthReceipt={onViewMonthReceipt}
+                    />
+                  </div>
                 ) : null}
 
                 {activeTab === 'reviews' ? (
@@ -457,13 +624,25 @@ export default function StudentMyProperty({
                       Reviews &amp; Ratings
                     </h3>
                     <p className="mt-2 text-sm text-[#6B7280]">
-                      Share feedback about your rental experience. At least 10 characters about the listing.
+                      See category ratings from past tenants or share feedback after your tenancy ends.
                     </p>
                     <div className="mt-6">
-                      <PropertyReviewsSection
-                        propertyId={primaryApplication.propertyId}
-                        hideSectionTitle
-                      />
+                      {reviewsLoading ? (
+                        <p className="text-sm text-[#6B7280]">Loading reviews…</p>
+                      ) : (
+                        <>
+                          <ReviewAggregatesPanel aggregates={reviewAggregates} />
+                          {!reviewItems.length ? (
+                            <p className="text-sm text-[#6B7280]">No reviews yet for this property.</p>
+                          ) : (
+                            <ul className="space-y-4">
+                              {reviewItems.map((r) => (
+                                <ReviewCard key={r.id} review={r} />
+                              ))}
+                            </ul>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
                 ) : null}

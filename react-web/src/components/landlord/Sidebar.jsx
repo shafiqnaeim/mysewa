@@ -12,6 +12,7 @@ import {
   ShieldCheckIcon,
   StarIcon,
   UserCircleIcon,
+  WrenchScrewdriverIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 
@@ -40,6 +41,7 @@ const MANAGEMENT_ITEMS = [
     icon: ClipboardDocumentListIcon,
     badge: true,
   },
+  { to: '/dashboard/landlord/maintenance', label: 'Maintenance', icon: WrenchScrewdriverIcon },
   { to: '/dashboard/landlord/payments', label: 'Payments', icon: CurrencyDollarIcon },
   { to: '/dashboard/landlord/reviews', label: 'Reviews', icon: StarIcon },
 ]

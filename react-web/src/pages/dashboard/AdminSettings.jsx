@@ -1,4 +1,4 @@
-import UniversityAdminMap from '../../components/UniversityAdminMap'
+import CampusMap from '../../components/admin/CampusMap'
 
 const TABS = [
   { key: 'general', label: 'General' },
@@ -206,13 +206,14 @@ function UniversityModal({
             </p>
             <p className="mt-1 text-xs text-[#6B7280]">Click the map to place or move the pin.</p>
             <div className="mt-2 overflow-hidden rounded-lg border border-[#E2E8F0]">
-              <UniversityAdminMap
-                mode="edit"
+              <CampusMap
+                mode="single"
                 universities={mapUniversities}
                 selectedId={selectedId}
                 latitude={draftLat}
                 longitude={draftLng}
                 onPinChange={onPinChange}
+                height={280}
               />
             </div>
           </div>
@@ -242,6 +243,7 @@ export default function AdminSettings({
   uniForm,
   uniDraftLat,
   uniDraftLng,
+  uniSelectedId = null,
   uniSaving,
   onUniFormChange,
   onUniPinChange,
@@ -252,11 +254,19 @@ export default function AdminSettings({
   onUniDelete,
   onUniEditOnMap,
   mapSelectedId,
+  mapSearchQuery = '',
+  onMapSearchChange,
   onMapSelect,
-  onMapSaveCoords,
+  onMapSaveChanges,
+  onMapDeleteSelected,
+  onMapBlankClick,
+  mapDraftName = '',
+  onMapDraftNameChange,
   mapDraftLat,
   mapDraftLng,
   onMapPinChange,
+  onMapDraftLatChange,
+  onMapDraftLngChange,
   mapSaving,
 }) {
   return (
@@ -380,54 +390,189 @@ export default function AdminSettings({
         ) : null}
 
         {activeTab === 'campus-map' ? (
-          <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
-                <div className="border-b border-[#E2E8F0] px-4 py-3">
-                  <h2 className="text-sm font-bold text-[#1A1A2E]">Campus map</h2>
-                  <p className="text-xs text-[#6B7280]">Click a pin to edit coordinates, or click the map to set a new pin.</p>
-                </div>
-                <UniversityAdminMap
-                  mode="overview"
-                  universities={universities}
-                  selectedId={mapSelectedId}
-                  onCampusSelect={onMapSelect}
-                />
+          <section className="space-y-6">
+            <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
+              <div className="border-b border-[#E2E8F0] px-5 py-4">
+                <h2 className="text-lg font-bold text-[#1A1A2E]">
+                  <span aria-hidden="true">📍 </span>
+                  Campus Map
+                </h2>
+                <p className="mt-1 text-sm text-[#6B7280]">
+                  Click a pin to edit coordinates, or click the map to set a new pin.
+                </p>
+              </div>
+              <CampusMap
+                mode="overview"
+                universities={universities}
+                selectedId={mapSelectedId}
+                latitude={mapDraftLat}
+                longitude={mapDraftLng}
+                searchQuery={mapSearchQuery}
+                showSearch
+                onSearchQueryChange={onMapSearchChange}
+                onCampusSelect={onMapSelect}
+                onPinChange={onMapPinChange}
+                onBlankMapClick={onMapBlankClick}
+                height={420}
+              />
+            </div>
+
+            <div className="rounded-xl border border-[#E2E8F0] bg-white p-5 shadow-sm">
+              <h3 className="text-base font-bold text-[#1A1A2E]">
+                <span aria-hidden="true">📌 </span>
+                Pin Editor
+              </h3>
+              <div className="mt-4 space-y-4 border-t border-[#E2E8F0] pt-4">
+                {mapSelectedId ? (
+                  <>
+                    <label className="block text-sm font-medium text-[#4B5563]">
+                      Campus
+                      <select
+                        className={inputClass}
+                        value={mapSelectedId}
+                        onChange={(e) => {
+                          const campus = universities.find((u) => Number(u.id) === Number(e.target.value))
+                          if (campus) onMapSelect?.(campus)
+                        }}
+                      >
+                        {universities.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({u.code})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-sm font-medium text-[#4B5563]">
+                      Campus name
+                      <input
+                        className={inputClass}
+                        value={mapDraftName}
+                        onChange={(e) => onMapDraftNameChange?.(e.target.value)}
+                      />
+                    </label>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-[#4B5563]">
+                        Latitude
+                        <input
+                          className={inputClass}
+                          type="text"
+                          inputMode="decimal"
+                          value={mapDraftLat}
+                          onChange={(e) => onMapDraftLatChange?.(e.target.value)}
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-[#4B5563]">
+                        Longitude
+                        <input
+                          className={inputClass}
+                          type="text"
+                          inputMode="decimal"
+                          value={mapDraftLng}
+                          onChange={(e) => onMapDraftLngChange?.(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={mapSaving || !mapDraftLat || !mapDraftLng}
+                        onClick={onMapSaveChanges}
+                        className="rounded-lg bg-[#DC2626] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-50"
+                      >
+                        {mapSaving ? 'Saving…' : 'Save changes'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={mapSaving}
+                        onClick={onMapDeleteSelected}
+                        className="rounded-lg border border-[#DC2626] bg-white px-5 py-2.5 text-sm font-semibold text-[#DC2626] hover:bg-[#FEF2F2] disabled:opacity-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-[#6B7280]">
+                    Select a campus pin on the map, or choose one from the list below to edit its location.
+                  </p>
+                )}
               </div>
             </div>
-            <aside className="rounded-xl border border-[#E2E8F0] bg-white p-5 shadow-sm">
-              <h3 className="text-sm font-bold text-[#1A1A2E]">Pin editor</h3>
-              {mapSelectedId ? (
-                <div className="mt-4 space-y-4">
-                  <p className="text-sm text-[#4B5563]">
-                    {universities.find((u) => u.id === mapSelectedId)?.name || 'Selected campus'}
-                  </p>
-                  <p className="text-xs text-[#6B7280]">
-                    Lat: {formatCoord(mapDraftLat)} · Lng: {formatCoord(mapDraftLng)}
-                  </p>
-                  <div className="overflow-hidden rounded-lg border border-[#E2E8F0]">
-                    <UniversityAdminMap
-                      mode="edit"
-                      universities={universities.filter((u) => u.id !== mapSelectedId)}
-                      selectedId={mapSelectedId}
-                      latitude={mapDraftLat}
-                      longitude={mapDraftLng}
-                      onPinChange={onMapPinChange}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    disabled={mapSaving || !mapDraftLat || !mapDraftLng}
-                    onClick={onMapSaveCoords}
-                    className="w-full rounded-lg bg-[#DC2626] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-50"
-                  >
-                    {mapSaving ? 'Saving…' : 'Save coordinates'}
-                  </button>
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-[#6B7280]">Select a campus pin on the map to edit its coordinates.</p>
-              )}
-            </aside>
+
+            <div className="overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E2E8F0] px-5 py-4">
+                <h3 className="text-base font-bold text-[#1A1A2E]">
+                  <span aria-hidden="true">📋 </span>
+                  Universities
+                </h3>
+                <button
+                  type="button"
+                  onClick={onUniAdd}
+                  className="rounded-lg bg-[#DC2626] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B91C1C]"
+                >
+                  <span aria-hidden="true">➕ </span>
+                  Add University
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="border-b border-[#E2E8F0] bg-[#FAFAFA] text-xs font-semibold uppercase tracking-wide text-[#6B7280]">
+                    <tr>
+                      <th className="px-5 py-3">Campus</th>
+                      <th className="px-5 py-3">Coordinates</th>
+                      <th className="px-5 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E2E8F0]">
+                    {universities.length === 0 && !universitiesLoading ? (
+                      <tr>
+                        <td colSpan={3} className="px-5 py-8 text-center text-[#6B7280]">
+                          No universities yet. Add one to place it on the map.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {universities.map((u) => (
+                      <tr
+                        key={u.id}
+                        className={`hover:bg-[#FAFAFA] ${mapSelectedId === u.id ? 'bg-[#FEF2F2]' : ''}`}
+                      >
+                        <td className="px-5 py-3">
+                          <p className="font-semibold text-[#DC2626]">{u.code}</p>
+                          <p className="text-[#1A1A2E]">{u.name}</p>
+                        </td>
+                        <td className="px-5 py-3 font-mono text-xs text-[#4B5563]">
+                          {u.pinned || (u.latitude != null && u.longitude != null)
+                            ? `${formatCoord(u.latitude)}, ${formatCoord(u.longitude)}`
+                            : '—'}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => onMapSelect(u)}
+                              className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-xs font-semibold text-[#4B5563] hover:bg-[#FAFAFA]"
+                              title="Edit on map"
+                            >
+                              <span aria-hidden="true">✏️ </span>
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onUniDelete(u)}
+                              className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-xs font-semibold text-[#DC2626] hover:bg-[#FEE2E2]"
+                              title="Delete"
+                            >
+                              <span aria-hidden="true">🗑️ </span>
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </section>
         ) : null}
       </div>

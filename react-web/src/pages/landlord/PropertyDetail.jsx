@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import LandlordLayout from '../../components/LandlordLayout'
 import DeletePropertyConfirmModal from '../../components/DeletePropertyConfirmModal'
+import EndTenancyConfirmModal from '../../components/landlord/EndTenancyConfirmModal'
 import DeleteError from '../../components/errors/DeleteError'
 import ErrorToast from '../../components/errors/ErrorToast'
 import LoadingSkeleton from '../../components/errors/LoadingSkeleton'
@@ -10,6 +11,8 @@ import PropertyNotFound from '../../components/errors/PropertyNotFound'
 import UnauthorizedError from '../../components/errors/UnauthorizedError'
 import { useToast } from '../../context/ToastContext'
 import { useLandlordGuard } from '../../hooks/useLandlordGuard'
+import { endTenancy } from '../../services/bookingService'
+import { canShowEndTenancy } from '../../utils/bookingLifecycle'
 import LandlordPropertyDetail from '../dashboard/LandlordPropertyDetail'
 
 /**
@@ -29,6 +32,10 @@ export default function PropertyDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteFailed, setDeleteFailed] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [activeBooking, setActiveBooking] = useState(null)
+  const [endTenancyOpen, setEndTenancyOpen] = useState(false)
+  const [endTenancyTarget, setEndTenancyTarget] = useState(null)
+  const [endingTenancy, setEndingTenancy] = useState(false)
 
   const id = Number(propertyId)
 
@@ -104,6 +111,55 @@ export default function PropertyDetail() {
     loadProperty()
   }, [authLoading, user?.id, loadProperty])
 
+  const loadActiveBooking = useCallback(async () => {
+    if (!token || !Number.isFinite(id)) {
+      setActiveBooking(null)
+      return
+    }
+    try {
+      const res = await fetch('/api/v1/applications/for-landlord', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setActiveBooking(null)
+        return
+      }
+      const items = Array.isArray(data.items) ? data.items : []
+      const match = items.find((app) => Number(app.propertyId) === id && canShowEndTenancy(app))
+      setActiveBooking(match || null)
+    } catch {
+      setActiveBooking(null)
+    }
+  }, [id, token])
+
+  useEffect(() => {
+    if (pageState !== 'ready' || !property) return
+    loadActiveBooking()
+  }, [pageState, property, loadActiveBooking])
+
+  async function confirmEndTenancy() {
+    if (!endTenancyTarget?.id) return
+    setEndingTenancy(true)
+    try {
+      await endTenancy(endTenancyTarget.id, token)
+      pushToast({ message: '✅ Tenancy ended successfully.', type: 'success' })
+      setEndTenancyOpen(false)
+      setEndTenancyTarget(null)
+      setActiveBooking(null)
+      await loadProperty()
+    } catch (e) {
+      pushToast({ message: e.message || 'Unable to end tenancy.', type: 'error' })
+    } finally {
+      setEndingTenancy(false)
+    }
+  }
+
+  const endTenancyStudentName = useMemo(() => {
+    if (!endTenancyTarget) return ''
+    return endTenancyTarget.student?.fullName || endTenancyTarget.studentName || 'Student'
+  }, [endTenancyTarget])
+
   async function confirmDelete() {
     if (!property) return
     setDeleting(true)
@@ -172,6 +228,11 @@ export default function PropertyDetail() {
           setDeleteFailed(false)
           setDeleteOpen(true)
         }}
+        activeBooking={activeBooking}
+        onEndTenancy={(booking) => {
+          setEndTenancyTarget(booking)
+          setEndTenancyOpen(true)
+        }}
       />
     )
   }
@@ -190,6 +251,18 @@ export default function PropertyDetail() {
           deleting={deleting}
           onCancel={() => !deleting && setDeleteOpen(false)}
           onConfirm={confirmDelete}
+        />
+      ) : null}
+
+      {endTenancyOpen && endTenancyTarget ? (
+        <EndTenancyConfirmModal
+          studentName={endTenancyStudentName}
+          propertyName={property?.name || endTenancyTarget.propertyName}
+          preferredMoveIn={endTenancyTarget.preferredMoveIn}
+          leaseEnd={endTenancyTarget.leaseEnd || endTenancyTarget.leaseEndDate}
+          busy={endingTenancy}
+          onCancel={() => !endingTenancy && setEndTenancyOpen(false)}
+          onConfirm={confirmEndTenancy}
         />
       ) : null}
 

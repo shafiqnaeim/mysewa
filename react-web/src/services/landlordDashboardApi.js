@@ -24,7 +24,7 @@ export async function fetchLandlordProperties(landlordId, token) {
 }
 
 export async function fetchLandlordBookings(token) {
-  const res = await fetch('/api/v1/bookings/landlord', {
+  const res = await fetch('/api/v1/applications/for-landlord', {
     headers: authHeaders(token),
   })
   const data = await parseJson(res)
@@ -48,13 +48,30 @@ export async function fetchLandlordReviews(token) {
 }
 
 export async function fetchLandlordDashboardData(landlordId, token) {
-  const [properties, bookings, payments, reviews] = await Promise.all([
+  const [propertiesResult, bookingsResult, paymentsResult, reviewsResult] = await Promise.allSettled([
     fetchLandlordProperties(landlordId, token),
     fetchLandlordBookings(token),
     fetchLandlordPayments(token),
     fetchLandlordReviews(token),
   ])
-  return { properties, bookings, payments, reviews }
+
+  const firstError = [propertiesResult, bookingsResult, paymentsResult, reviewsResult].find(
+    (r) => r.status === 'rejected',
+  )
+  if (propertiesResult.status === 'rejected') {
+    throw propertiesResult.reason
+  }
+
+  return {
+    properties: propertiesResult.status === 'fulfilled' ? propertiesResult.value : [],
+    bookings: bookingsResult.status === 'fulfilled' ? bookingsResult.value : [],
+    payments: paymentsResult.status === 'fulfilled' ? paymentsResult.value : [],
+    reviews: reviewsResult.status === 'fulfilled' ? reviewsResult.value : [],
+    partialError:
+      firstError && firstError !== propertiesResult
+        ? firstError.reason?.message || 'Some dashboard data could not be loaded.'
+        : null,
+  }
 }
 
 export function countActiveBookings(bookings) {
@@ -80,7 +97,7 @@ export function sumCompletedEarnings(payments) {
 export function averageReviewRating(reviews) {
   const rows = reviews || []
   if (!rows.length) return null
-  const total = rows.reduce((sum, r) => sum + (Number(r.rating) || 0), 0)
+  const total = rows.reduce((sum, r) => sum + (Number(r.ratingOverall ?? r.rating) || 0), 0)
   return total / rows.length
 }
 

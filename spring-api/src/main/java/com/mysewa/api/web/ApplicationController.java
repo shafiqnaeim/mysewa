@@ -15,6 +15,7 @@ import com.mysewa.api.payment.PaymentProperties;
 import com.mysewa.api.payment.ToyyibPayService;
 import com.mysewa.api.service.ApplicationService;
 import com.mysewa.api.service.AuthService;
+import com.mysewa.api.service.BookingService;
 import com.mysewa.api.service.EmailService;
 import com.mysewa.api.service.IcCryptoService;
 import com.mysewa.api.service.NotificationService;
@@ -72,6 +73,7 @@ public class ApplicationController {
     private final NotificationService notificationService;
     private final EmailService emailService;
     private final ApplicationService applicationService;
+    private final BookingService bookingService;
 
     public ApplicationController(
             ApplicationRepository applicationRepository,
@@ -84,7 +86,8 @@ public class ApplicationController {
             IcCryptoService icCryptoService,
             NotificationService notificationService,
             EmailService emailService,
-            ApplicationService applicationService
+            ApplicationService applicationService,
+            BookingService bookingService
     ) {
         this.applicationRepository = applicationRepository;
         this.propertyRepository = propertyRepository;
@@ -97,6 +100,7 @@ public class ApplicationController {
         this.notificationService = notificationService;
         this.emailService = emailService;
         this.applicationService = applicationService;
+        this.bookingService = bookingService;
     }
 
     private static final double AVG_DAYS_PER_MONTH = 365.25 / 12.0;
@@ -520,6 +524,8 @@ public class ApplicationController {
         tx.setCreatedAt(now);
         FinancialTransaction savedTx = financialTransactionRepository.save(tx);
 
+        bookingService.onDepositConfirmed(app, property);
+
         ApplicationResponse item = enrichResponse(
                 ApplicationResponse.from(app, property, student, icCryptoService),
                 app,
@@ -647,6 +653,8 @@ public class ApplicationController {
         tx.setCreatedAt(now);
         financialTransactionRepository.save(tx);
 
+        bookingService.onDepositConfirmed(app, property);
+
         ApplicationResponse item = enrichResponse(
                 ApplicationResponse.from(app, property, student, icCryptoService),
                 app,
@@ -762,6 +770,57 @@ public class ApplicationController {
     }
 
     /**
+     * Student cancels an accepted booking — releases locked availability dates.
+     */
+    @PostMapping("/{id}/cancel")
+    @Transactional
+    public ResponseEntity<?> cancelBooking(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable("id") Integer applicationId
+    ) {
+        UserAccount student;
+        try {
+            student = requireStudent(authorization);
+        } catch (IllegalArgumentException ex) {
+            return unauthorizedOrMessage(ex);
+        }
+        if (applicationId == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Application id is required"));
+        }
+        Optional<Application> appOpt = applicationRepository.findById(applicationId);
+        if (appOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Application not found"));
+        }
+        Application app = appOpt.get();
+        if (!app.getStudentId().equals(student.getId())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "This application belongs to another student"));
+        }
+        String status = nullSafe(app.getStatus()).toLowerCase(Locale.ROOT);
+        if ("cancelled".equals(status)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "This booking is already cancelled"));
+        }
+        if (!"accepted".equals(status)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                    "message",
+                    "Only accepted bookings can be cancelled."
+            ));
+        }
+        app.setStatus("cancelled");
+        applicationRepository.save(app);
+        bookingService.onBookingCancelled(app);
+
+        Optional<PropertyEntity> propOpt = propertyRepository.findById(app.getPropertyId());
+        PropertyEntity property = propOpt.orElse(null);
+        ApplicationResponse item = enrichResponse(
+                ApplicationResponse.from(app, property, student, icCryptoService),
+                app,
+                property,
+                financialTransactionRepository.hasCompletedDeposit(applicationId)
+        );
+        return ResponseEntity.ok(Map.of("item", item));
+    }
+
+    /**
      * Deletes all prototype deposit rows for this application so the student can run Pay deposit again.
      * Disabled unless {@code app.payment.dev-allow-deposit-reset=true} (env {@code MYSEWA_DEV_RESET_DEPOSIT}).
      */
@@ -801,6 +860,7 @@ public class ApplicationController {
             ));
         }
         financialTransactionRepository.deleteByApplicationIdAndTypeIn(applicationId, DepositType.COMPLETED_DEPOSIT_TYPES);
+        bookingService.onBookingCancelled(app);
 
         Optional<PropertyEntity> propOpt = propertyRepository.findById(app.getPropertyId());
         PropertyEntity property = propOpt.orElse(null);

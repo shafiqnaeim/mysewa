@@ -10,6 +10,8 @@ public interface ApplicationRentMonthStudentLogRepository extends JpaRepository<
 
     List<ApplicationRentMonthStudentLog> findByApplicationIdAndRentYearOrderByRentMonthAsc(Integer applicationId, Integer rentYear);
 
+    List<ApplicationRentMonthStudentLog> findByApplicationIdOrderByRentYearAscRentMonthAsc(Integer applicationId);
+
     Optional<ApplicationRentMonthStudentLog> findByApplicationIdAndRentYearAndRentMonth(
             Integer applicationId,
             Integer rentYear,

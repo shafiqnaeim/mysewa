@@ -1,46 +1,66 @@
-import { useRef, useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import LandingReveal from './LandingReveal'
+import { fadeUp, slideFromLeft, slideFromRight } from './landingMotion'
+import { listPropertyImageUrls } from '../../utils/propertyDisplay'
 
-function TrendingCard({ item, onSelect }) {
+function PropertyCard({ item, index }) {
+  const navigate = useNavigate()
+  const fromLeft = index % 2 === 0
+  const variant = fromLeft ? slideFromLeft : slideFromRight
+  const images = listPropertyImageUrls(item)
+  const imageUrl = images[0] || null
+  const location = [item.location, item.campus, item.city].filter(Boolean).join(', ') || 'Terengganu'
+  const typeLabel = item.type ? String(item.type) : 'Rental'
+
   return (
-    <article className="w-[280px] shrink-0 snap-start overflow-hidden rounded-2xl border border-story-primary/10 bg-white shadow-md sm:w-[300px]">
-      <div className="relative h-44 overflow-hidden">
-        <img src={item.image} alt="" className="h-full w-full object-cover" loading="lazy" />
-        {item.petFriendly ? (
-          <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-story-primary">
-            Pet Friendly
-          </span>
-        ) : null}
+    <motion.article
+      variants={variant}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, margin: '-4% 0px' }}
+      custom={index * 0.08}
+      className="w-[280px] shrink-0 snap-start overflow-hidden rounded-2xl border border-[#2D3748]/10 bg-white shadow-md transition-shadow duration-300 hover:shadow-xl sm:w-[300px]"
+    >
+      <div className="group relative h-44 overflow-hidden bg-[#2D3748]/10">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt=""
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-[#2D3748]/40">No photo</div>
+        )}
+        <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold capitalize text-[#2D3748]">
+          {typeLabel}
+        </span>
       </div>
       <div className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-bold text-story-primary">{item.name}</h3>
-          <span className="shrink-0 rounded-full bg-story-accent/30 px-2 py-0.5 text-xs font-bold text-story-primary">
-            {item.neighborhoodScore}/100
-          </span>
-        </div>
-        <p className="mt-1 text-xs text-story-primary/60">Neighborhood Score</p>
-        <p className="mt-2 text-sm text-story-primary/75">{item.location}</p>
+        <h3 className="font-bold text-[#2D3748]">{item.name || 'Rental listing'}</h3>
+        <p className="mt-2 text-sm text-[#2D3748]/75">{location}</p>
         <div className="mt-3 flex items-center justify-between">
-          <p className="text-lg font-extrabold text-story-primary">
-            RM {item.price}
-            <span className="text-sm font-medium text-story-primary/50">/mo</span>
+          <p className="text-lg font-extrabold text-[#2D3748]">
+            RM {Number(item.price) || 0}
+            <span className="text-sm font-medium text-[#2D3748]/50">/mo</span>
           </p>
-          <button
+          <motion.button
             type="button"
-            onClick={() => onSelect?.(item)}
-            className="rounded-full bg-story-primary px-3 py-1.5 text-xs font-bold text-white transition hover:scale-105"
+            onClick={() => navigate(`/properties/${item.id}`)}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.97 }}
+            className="rounded-full bg-[#2D3748] px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-[#2D3748]/20"
           >
             View
-          </button>
+          </motion.button>
         </div>
       </div>
-    </article>
+    </motion.article>
   )
 }
 
-export default function LandingTrending({ items, loading, onSelect }) {
+export default function LandingTrending({ items, loading, error }) {
   const trackRef = useRef(null)
   const [dragLimit, setDragLimit] = useState(0)
 
@@ -63,23 +83,60 @@ export default function LandingTrending({ items, loading, onSelect }) {
   }, [items, loading])
 
   return (
-    <section id="trending" className="bg-white px-4 py-16 sm:px-6 lg:px-8">
+    <section id="popular-properties" className="bg-white px-4 py-20 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl">
-        <LandingReveal className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true }}
+          className="mb-8 flex flex-wrap items-end justify-between gap-4"
+        >
           <div>
-            <h2 className="font-display text-3xl text-story-primary sm:text-4xl">Trending Rentals</h2>
-            <p className="mt-2 text-story-primary/70">Drag to explore popular listings near campus.</p>
+            <h2 className="font-display text-3xl text-[#2D3748] sm:text-4xl">Popular Properties</h2>
+            <p className="mt-2 text-[#2D3748]/70">Top listings from MySewa — ranked by student reviews.</p>
           </div>
-          <a
-            href="#landing-search-section"
-            className="text-sm font-bold text-story-primary underline-offset-4 hover:underline"
+          <Link
+            to="/properties"
+            className="group inline-flex items-center gap-1 text-sm font-bold text-[#E88D5B] transition-colors hover:text-[#2D3748]"
           >
-            See all listings
-          </a>
-        </LandingReveal>
+            View All Properties
+            <motion.span
+              className="inline-block"
+              animate={{ x: [0, 4, 0] }}
+              transition={{ repeat: Infinity, duration: 1.4, ease: 'easeInOut' }}
+              aria-hidden="true"
+            >
+              →
+            </motion.span>
+          </Link>
+        </motion.div>
 
         {loading ? (
-          <p className="text-story-primary/60">Loading trending rentals…</p>
+          <div className="flex gap-5 overflow-hidden">
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.12 }}
+                className="h-72 w-[280px] shrink-0 animate-pulse rounded-2xl bg-[#2D3748]/10 sm:w-[300px]"
+              />
+            ))}
+          </div>
+        ) : error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+        ) : items.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-[#2D3748]/20 bg-[#FAFAFA] px-6 py-12 text-center">
+            <p className="font-semibold text-[#2D3748]">No properties listed yet</p>
+            <p className="mt-2 text-sm text-[#2D3748]/65">Check back soon — new listings are added by verified landlords.</p>
+            <Link
+              to="/properties"
+              className="mt-4 inline-flex rounded-full bg-[#E88D5B] px-5 py-2.5 text-sm font-bold text-[#2D3748]"
+            >
+              Browse properties
+            </Link>
+          </div>
         ) : (
           <div ref={trackRef} className="overflow-hidden">
             <motion.div
@@ -89,8 +146,8 @@ export default function LandingTrending({ items, loading, onSelect }) {
               dragElastic={0.08}
               style={{ touchAction: 'pan-y' }}
             >
-              {items.map((item) => (
-                <TrendingCard key={item.id} item={item} onSelect={onSelect} />
+              {items.map((item, index) => (
+                <PropertyCard key={item.id} item={item} index={index} />
               ))}
             </motion.div>
           </div>

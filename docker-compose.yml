@@ -28,6 +28,7 @@ services:
     restart: unless-stopped
     environment:
       SERVER_PORT: 8090
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       DB_HOST: mysql
       DB_PORT: 3306
       DB_NAME: ${DB_NAME:-mysewa}
@@ -53,6 +54,7 @@ services:
       PAYMENT_MANUAL_BANK_HOLDER: ${PAYMENT_MANUAL_BANK_HOLDER:-}
       PAYMENT_MANUAL_QR_URL: ${PAYMENT_MANUAL_QR_URL:-}
       MYSEWA_DEV_RESET_DEPOSIT: ${MYSEWA_DEV_RESET_DEPOSIT:-false}
+      MYSEWA_DEMO_ACCOUNTS: ${MYSEWA_DEMO_ACCOUNTS:-false}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
@@ -64,6 +66,9 @@ services:
       context: ./react-web
       # If "npm ci" fails with ECONNRESET: build React on host, set WEB_DOCKERFILE=Dockerfile.prebuilt in .env
       dockerfile: ${WEB_DOCKERFILE:-Dockerfile}
+      args:
+        # Required for Google Maps on Add Property — set in repo root .env, then: docker compose build web
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
     container_name: mysewa-web
     restart: unless-stopped
     ports:

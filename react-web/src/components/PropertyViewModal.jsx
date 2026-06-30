@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import PropertyAvailabilityCalendar from './PropertyAvailabilityCalendar'
+import AvailabilityCalendar from './AvailabilityCalendar'
 import PropertyRatingBox from './PropertyRatingBox'
 import PropertyReviewsSection from './PropertyReviewsSection'
 import PropertySurroundingsMap from './PropertySurroundingsMap'
@@ -433,7 +433,7 @@ export default function PropertyViewModal({
 
               <section className="pv-section pv-section--availability">
                 <h3 className="pv-section-title">Availability</h3>
-                <PropertyAvailabilityCalendar status={displayItem.status} />
+                <AvailabilityCalendar propertyId={displayItem.id} viewMode="student" status={displayItem.status} />
               </section>
 
               {displayItem.id != null ? (

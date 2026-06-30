@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StudentLayout from '../components/StudentLayout'
+import ReviewForm from '../components/student/ReviewForm'
 import { useStudentGuard } from '../hooks/useStudentGuard'
 import { useToast } from '../context/ToastContext'
+import { fetchStudentReviews } from '../services/reviewService'
+import { canLeaveReview, isReviewEligibleApplication } from '../utils/reviewEligibility'
 import StudentReviews from './dashboard/StudentReviews'
 
 async function readApiErrorMessage(res) {
@@ -18,6 +21,14 @@ async function readApiErrorMessage(res) {
   return trimmed.length < 220 ? trimmed : `Request failed (${res.status})`
 }
 
+function buildReviewedPropertyIds(reviews) {
+  return new Set(
+    (Array.isArray(reviews) ? reviews : [])
+      .map((r) => Number(r.propertyId))
+      .filter((id) => Number.isFinite(id)),
+  )
+}
+
 export default function StudentReviewsPage() {
   const navigate = useNavigate()
   const { user, loading: authLoading, error: authError } = useStudentGuard()
@@ -25,123 +36,75 @@ export default function StudentReviewsPage() {
 
   const [loading, setLoading] = useState(true)
   const [applications, setApplications] = useState([])
-  const [pastReviews, setPastReviews] = useState([])
-  const [canSubmitReview, setCanSubmitReview] = useState(false)
-
-  const [rating, setRating] = useState(5)
-  const [comment, setComment] = useState('')
-  const [submitting, setSubmitting] = useState(false)
+  const [submittedReviews, setSubmittedReviews] = useState([])
+  const [reviewTarget, setReviewTarget] = useState(null)
 
   const [editingId, setEditingId] = useState(null)
   const [editRating, setEditRating] = useState(5)
   const [editComment, setEditComment] = useState('')
   const [savingId, setSavingId] = useState(null)
 
-  const acceptedApplications = useMemo(
-    () => applications.filter((a) => String(a.status || '').toLowerCase() === 'accepted' && a.propertyId != null),
+  const reviewedPropertyIds = useMemo(
+    () => buildReviewedPropertyIds(submittedReviews),
+    [submittedReviews],
+  )
+
+  const approvedBookings = useMemo(
+    () => applications.filter((a) => isReviewEligibleApplication(a)),
     [applications],
   )
 
-  const primaryApplication = useMemo(() => {
-    if (!acceptedApplications.length) return null
-    return [...acceptedApplications].sort((a, b) => {
-      const ta = new Date(a.updatedAt || a.createdAt || 0).getTime()
-      const tb = new Date(b.updatedAt || b.createdAt || 0).getTime()
-      return tb - ta
-    })[0]
-  }, [acceptedApplications])
+  const pendingBookings = useMemo(
+    () => approvedBookings.filter((a) => canLeaveReview(a, reviewedPropertyIds)),
+    [approvedBookings, reviewedPropertyIds],
+  )
 
-  const currentProperty = useMemo(() => {
-    if (!primaryApplication) return null
-    return {
-      id: primaryApplication.propertyId,
-      name: primaryApplication.propertyName || `Property #${primaryApplication.propertyId}`,
+  const applicationByPropertyId = useMemo(() => {
+    const map = {}
+    for (const app of approvedBookings) {
+      const pid = Number(app.propertyId)
+      if (!Number.isFinite(pid)) continue
+      if (!map[pid]) map[pid] = app
     }
-  }, [primaryApplication])
+    return map
+  }, [approvedBookings])
 
-  const loadReviews = useCallback(async () => {
+  const loadData = useCallback(async () => {
     const token = localStorage.getItem('mysewa_token')
     if (!token || !user?.id) return
     setLoading(true)
     try {
-      const [appsRes, reviewsRes] = await Promise.all([
+      const [appsRes, reviewsData] = await Promise.all([
         fetch('/api/v1/applications/for-student', { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/v1/reviews/for-student', { headers: { Authorization: `Bearer ${token}` } }),
+        fetchStudentReviews(token),
       ])
 
       const appsData = await appsRes.json().catch(() => ({}))
-      if (appsRes.ok) setApplications(Array.isArray(appsData.items) ? appsData.items : [])
+      if (appsRes.ok) {
+        setApplications(Array.isArray(appsData.items) ? appsData.items : [])
+      } else {
+        setApplications([])
+        pushToast({ message: appsData.message || 'Unable to load your bookings.', type: 'error' })
+      }
 
-      const reviewsData = await reviewsRes.json().catch(() => ({}))
-      if (!reviewsRes.ok) throw new Error(reviewsData.message || `Failed to load reviews (HTTP ${reviewsRes.status})`)
-      setPastReviews(Array.isArray(reviewsData.items) ? reviewsData.items : [])
+      setSubmittedReviews(Array.isArray(reviewsData.items) ? reviewsData.items : [])
     } catch (e) {
-      setPastReviews([])
+      setApplications([])
+      setSubmittedReviews([])
       pushToast({ message: e.message || 'Unable to load reviews.', type: 'error' })
     } finally {
       setLoading(false)
     }
   }, [user?.id, pushToast])
 
-  const loadCanSubmit = useCallback(async () => {
-    if (!currentProperty?.id) {
-      setCanSubmitReview(false)
-      return
-    }
-    const token = localStorage.getItem('mysewa_token')
-    if (!token) return
-    try {
-      const res = await fetch(`/api/v1/reviews/for-property/${encodeURIComponent(currentProperty.id)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok) setCanSubmitReview(Boolean(data.canSubmitReview))
-      else setCanSubmitReview(false)
-    } catch {
-      setCanSubmitReview(false)
-    }
-  }, [currentProperty?.id])
-
   useEffect(() => {
-    if (user?.id) loadReviews()
-  }, [user?.id, loadReviews])
-
-  useEffect(() => {
-    loadCanSubmit()
-  }, [loadCanSubmit, pastReviews])
-
-  async function handleSubmitReview(e) {
-    e.preventDefault()
-    const token = localStorage.getItem('mysewa_token')
-    if (!token || !currentProperty?.id) return
-    setSubmitting(true)
-    try {
-      const res = await fetch('/api/v1/reviews', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          propertyId: currentProperty.id,
-          rating,
-          comment: comment.trim(),
-        }),
-      })
-      if (!res.ok) throw new Error(await readApiErrorMessage(res))
-      pushToast({ message: 'Thanks — your review was posted.', type: 'success' })
-      setComment('')
-      setRating(5)
-      await loadReviews()
-      await loadCanSubmit()
-    } catch (err) {
-      pushToast({ message: err.message || 'Could not post review.', type: 'error' })
-    } finally {
-      setSubmitting(false)
-    }
-  }
+    if (user?.id) loadData()
+  }, [user?.id, loadData])
 
   function handleEdit(review) {
     setEditingId(review.id)
-    setEditRating(review.rating || 5)
-    setEditComment(review.comment || '')
+    setEditRating(review.ratingOverall ?? review.rating ?? 5)
+    setEditComment(review.publicComment || review.comment || '')
   }
 
   function handleCancelEdit() {
@@ -167,8 +130,7 @@ export default function StudentReviewsPage() {
       if (!res.ok) throw new Error(await readApiErrorMessage(res))
       pushToast({ message: 'Review updated.', type: 'success' })
       handleCancelEdit()
-      await loadReviews()
-      await loadCanSubmit()
+      await loadData()
     } catch (err) {
       pushToast({ message: err.message || 'Could not update review.', type: 'error' })
     } finally {
@@ -190,8 +152,7 @@ export default function StudentReviewsPage() {
       if (!res.ok) throw new Error(await readApiErrorMessage(res))
       pushToast({ message: 'Review deleted.', type: 'success' })
       if (editingId === review.id) handleCancelEdit()
-      await loadReviews()
-      await loadCanSubmit()
+      await loadData()
     } catch (err) {
       pushToast({ message: err.message || 'Could not delete review.', type: 'error' })
     } finally {
@@ -223,21 +184,29 @@ export default function StudentReviewsPage() {
 
   return (
     <StudentLayout>
+      {reviewTarget ? (
+        <ReviewForm
+          propertyId={reviewTarget.propertyId}
+          bookingId={reviewTarget.id}
+          propertyName={reviewTarget.propertyName || `Property #${reviewTarget.propertyId}`}
+          onClose={() => setReviewTarget(null)}
+          onSubmitted={() => {
+            setReviewTarget(null)
+            loadData()
+          }}
+        />
+      ) : null}
+
       <StudentReviews
         loading={loading}
-        currentProperty={currentProperty}
-        canSubmitReview={canSubmitReview}
-        rating={rating}
-        comment={comment}
-        submitting={submitting}
-        pastReviews={pastReviews}
+        pendingBookings={pendingBookings}
+        submittedReviews={submittedReviews}
+        applicationByPropertyId={applicationByPropertyId}
         editingId={editingId}
         editRating={editRating}
         editComment={editComment}
         savingId={savingId}
-        onRatingChange={setRating}
-        onCommentChange={setComment}
-        onSubmitReview={handleSubmitReview}
+        onLeaveReview={setReviewTarget}
         onEdit={handleEdit}
         onCancelEdit={handleCancelEdit}
         onSaveEdit={handleSaveEdit}

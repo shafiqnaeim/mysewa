@@ -1,9 +1,112 @@
+import { getIdentityAdminState } from '../../utils/verificationStatus'
+
 const inputClass =
   'mt-1 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2.5 text-sm text-[#1A1A2E] outline-none focus:border-[#DC2626] focus:ring-2 focus:ring-[#DC2626]/20'
+
+const inputDisabledClass =
+  'mt-1 w-full cursor-not-allowed rounded-lg border border-[#E2E8F0] bg-[#F7FAFC] px-3 py-2.5 text-sm text-[#6B7280]'
 
 function SortIndicator({ active, direction }) {
   if (!active) return <span className="text-[#D1D5DB]">↕</span>
   return <span className="text-[#DC2626]">{direction === 'asc' ? '↑' : '↓'}</span>
+}
+
+export function DbStatusBadge({ value, variant = 'default' }) {
+  const s = String(value || '').trim().toLowerCase()
+
+  const styles = {
+    green: 'bg-green-100 text-green-800',
+    yellow: 'bg-yellow-100 text-yellow-800',
+    red: 'bg-red-100 text-red-800',
+    orange: 'bg-orange-100 text-orange-800',
+    purple: 'bg-purple-100 text-purple-800',
+    gray: 'bg-gray-100 text-gray-700',
+    blue: 'bg-blue-100 text-blue-800',
+  }
+
+  let tone = 'gray'
+  let label = value || '—'
+
+  if (variant === 'account') {
+    if (s === 'active') {
+      tone = 'green'
+      label = 'Active'
+    } else if (s === 'suspended') {
+      tone = 'red'
+      label = 'Suspended'
+    } else if (s === 'pending') {
+      tone = 'yellow'
+      label = 'Pending'
+    }
+  } else if (variant === 'email') {
+    tone = value ? 'green' : 'gray'
+    label = value ? 'Verified' : 'Unverified'
+  } else if (variant === 'identity') {
+    const state = getIdentityAdminState(value)
+    if (state === 'verified') {
+      tone = 'green'
+      label = 'Verified'
+    } else if (state === 'rejected') {
+      tone = 'red'
+      label = 'Rejected'
+    } else {
+      tone = 'yellow'
+      label = 'Pending'
+    }
+  } else if (variant === 'booking') {
+    if (s === 'accepted' || s === 'approved' || s === 'confirmed') {
+      tone = 'green'
+      label = 'Accepted'
+    } else if (s === 'rejected') {
+      tone = 'red'
+      label = 'Rejected'
+    } else {
+      tone = 'yellow'
+      label = 'Pending'
+    }
+  } else if (variant === 'payment') {
+    if (s === 'completed') {
+      tone = 'green'
+      label = 'Completed'
+    } else if (s === 'failed' || s === 'refunded') {
+      tone = 'red'
+      label = s === 'refunded' ? 'Refunded' : 'Failed'
+    } else {
+      tone = 'yellow'
+      label = 'Pending'
+    }
+  } else if (variant === 'property') {
+    if (s === 'available') {
+      tone = 'green'
+      label = 'Available'
+    } else if (s === 'rejected') {
+      tone = 'red'
+      label = 'Rejected'
+    } else if (s === 'pending') {
+      tone = 'yellow'
+      label = 'Pending'
+    } else if (s === 'rented' || s === 'booked') {
+      tone = 'blue'
+      label = s === 'rented' ? 'Rented' : 'Booked'
+    } else {
+      tone = 'gray'
+      label = value || '—'
+    }
+  } else if (variant === 'role') {
+    if (s === 'admin') tone = 'red'
+    else if (s === 'landlord') tone = 'orange'
+    else tone = 'purple'
+    label = s === 'admin' ? 'Admin' : s === 'landlord' ? 'Landlord' : 'Student'
+  } else if (variant === 'active') {
+    tone = value ? 'green' : 'gray'
+    label = value ? 'Active' : 'Inactive'
+  }
+
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${styles[tone]}`}>
+      {label}
+    </span>
+  )
 }
 
 function Pagination({ page, totalPages, total, pageSize, onPageChange }) {
@@ -64,7 +167,41 @@ function Pagination({ page, totalPages, total, pageSize, onPageChange }) {
   )
 }
 
-function RecordModal({ mode, title, fields, form, saving, onChange, onSubmit, onClose }) {
+function DeleteConfirmModal({ target, recordLabel, saving, onConfirm, onCancel }) {
+  if (!target) return null
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-bold text-[#1A1A2E]">Delete record?</h2>
+        <p className="mt-3 text-sm text-[#4B5563]">
+          Are you sure you want to delete <strong className="text-[#1A1A2E]">{recordLabel}</strong>?
+        </p>
+        <p className="mt-2 text-sm font-medium text-[#DC2626]">This action cannot be undone.</p>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onCancel}
+            className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-semibold text-[#4B5563] hover:bg-[#FAFAFA] disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onConfirm}
+            className="rounded-lg bg-[#DC2626] px-4 py-2 text-sm font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-50"
+          >
+            {saving ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function RecordModal({ mode, title, editingId, fields, form, saving, onChange, onSubmit, onClose }) {
   if (!mode) return null
 
   return (
@@ -72,6 +209,7 @@ function RecordModal({ mode, title, fields, form, saving, onChange, onSubmit, on
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-[#E2E8F0] bg-white shadow-xl">
         <div className="border-b border-[#E2E8F0] px-6 py-4">
           <h2 className="text-lg font-bold text-[#1A1A2E]">{title}</h2>
+          <p className="mt-1 text-xs text-[#6B7280]">Only safe fields are editable. IDs cannot be changed.</p>
         </div>
         <form
           className="space-y-4 p-6"
@@ -80,10 +218,18 @@ function RecordModal({ mode, title, fields, form, saving, onChange, onSubmit, on
             onSubmit()
           }}
         >
+          {mode === 'edit' && editingId != null ? (
+            <label className="block text-sm font-medium text-[#4B5563]">
+              ID
+              <input type="text" className={inputDisabledClass} value={editingId} disabled readOnly />
+            </label>
+          ) : null}
           {fields.map((field) => (
             <label key={field.key} className="block text-sm font-medium text-[#4B5563]">
               {field.label}
-              {field.type === 'select' ? (
+              {field.readOnly ? (
+                <input type="text" className={inputDisabledClass} value={form[field.key] ?? ''} disabled readOnly />
+              ) : field.type === 'select' ? (
                 <select
                   className={inputClass}
                   value={form[field.key] ?? ''}
@@ -168,7 +314,10 @@ export default function AdminDatabase({
   modalTitle,
   modalFields,
   modalForm,
+  editingId,
   saving,
+  deleteTarget,
+  deleteRecordLabel,
   onTabChange,
   onSearchChange,
   onSort,
@@ -176,6 +325,8 @@ export default function AdminDatabase({
   onAdd,
   onEdit,
   onDelete,
+  onDeleteConfirm,
+  onDeleteCancel,
   onExportCsv,
   onExportJson,
   onModalChange,
@@ -190,7 +341,9 @@ export default function AdminDatabase({
             <span aria-hidden="true">📊 </span>
             Database
           </h1>
-          <p className="mt-2 text-sm text-[#6B7280]">Browse and manage database tables safely</p>
+          <p className="mt-2 text-sm text-[#6B7280]">
+            Browse and manage records safely — no raw SQL or system tables.
+          </p>
         </header>
 
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Database tables">
@@ -298,7 +451,9 @@ export default function AdminDatabase({
                               type="button"
                               onClick={() => onEdit(row)}
                               className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-xs font-semibold text-[#4B5563] hover:bg-[#FAFAFA]"
+                              title="Edit"
                             >
+                              <span aria-hidden="true">✏️ </span>
                               Edit
                             </button>
                           ) : null}
@@ -306,8 +461,10 @@ export default function AdminDatabase({
                             <button
                               type="button"
                               onClick={() => onDelete(row)}
-                              className="rounded-lg bg-[#DC2626] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#B91C1C]"
+                              className="rounded-lg border border-[#FECACA] bg-[#FEF2F2] px-2.5 py-1 text-xs font-semibold text-[#DC2626] hover:bg-[#FEE2E2]"
+                              title="Delete"
                             >
+                              <span aria-hidden="true">🗑️ </span>
                               Delete
                             </button>
                           ) : null}
@@ -342,12 +499,21 @@ export default function AdminDatabase({
       <RecordModal
         mode={modalMode}
         title={modalTitle}
+        editingId={editingId}
         fields={modalFields}
         form={modalForm}
         saving={saving}
         onChange={onModalChange}
         onSubmit={onModalSubmit}
         onClose={onModalClose}
+      />
+
+      <DeleteConfirmModal
+        target={deleteTarget}
+        recordLabel={deleteRecordLabel}
+        saving={saving}
+        onConfirm={onDeleteConfirm}
+        onCancel={onDeleteCancel}
       />
     </div>
   )

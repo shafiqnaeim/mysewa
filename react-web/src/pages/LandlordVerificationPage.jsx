@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import LandlordLayout from '../components/LandlordLayout'
 import { useLandlordGuard } from '../hooks/useLandlordGuard'
 import { useToast } from '../context/ToastContext'
@@ -19,42 +19,34 @@ import {
   removeVerificationDoc,
   saveVerificationDoc,
 } from '../utils/landlordVerificationStorage'
+import {
+  getDocumentVerificationState,
+  VERIFICATION_STATUS_LABELS,
+} from '../utils/verificationStatus'
 import LandlordVerification from './dashboard/LandlordVerification'
-
-const VERIFICATION_STATE_LABEL = {
-  pending: 'Pending',
-  verified: 'Verified',
-  rejected: 'Rejected',
-}
-
-function getVerificationState(raw) {
-  const s = String(raw || '').trim()
-  if (!s) return 'pending'
-  const u = s.toUpperCase()
-  if (u.includes('VERIF') && !u.includes('UNVER')) return 'verified'
-  if (u.includes('REJECT') || u.includes('FAIL') || u.includes('INVALID')) return 'rejected'
-  return 'pending'
-}
 
 export default function LandlordVerificationPage() {
   const { user, loading, error } = useLandlordGuard()
   const { pushToast } = useToast()
-
-  const grantInputRef = useRef(null)
-  const selfieInputRef = useRef(null)
 
   const [icConfirmed, setIcConfirmed] = useState(false)
   const [grantUrl, setGrantUrl] = useState('')
   const [selfieUrl, setSelfieUrl] = useState('')
   const [fileMeta, setFileMeta] = useState({})
   const [submittedAt, setSubmittedAt] = useState(null)
+  const [rejectionReason, setRejectionReason] = useState('')
+  const [docStatus, setDocStatus] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [uploadingSlot, setUploadingSlot] = useState(null)
+  const [icProcessing, setIcProcessing] = useState(false)
+  const [confirmedIc, setConfirmedIc] = useState('')
 
   const verificationState = useMemo(
-    () => getVerificationState(user?.documentVerificationStatus),
-    [user?.documentVerificationStatus],
+    () => getDocumentVerificationState(docStatus || user?.documentVerificationStatus),
+    [docStatus, user?.documentVerificationStatus],
   )
+
+  const verificationLabel = VERIFICATION_STATUS_LABELS[verificationState] || VERIFICATION_STATUS_LABELS.not_submitted
 
   const { steps, percent } = useMemo(
     () => computeUploadProgress({ icConfirmed, grantUrl, selfieUrl, submittedAt }),
@@ -77,6 +69,11 @@ export default function LandlordVerificationPage() {
         const remote = await fetchMyVerificationStatus()
         if (cancelled) return
         setIcConfirmed(Boolean(remote.icConfirmed))
+        if (remote.icConfirmed && user?.icNumber) {
+          setConfirmedIc(user.icNumber)
+        }
+        setDocStatus(remote.documentVerificationStatus || '')
+        setRejectionReason(remote.rejectionReason || '')
         const docs = remote.documents || {}
         if (docs.grantUrl) setGrantUrl(resolveUploadUrl(docs.grantUrl))
         if (docs.selfieUrl) setSelfieUrl(resolveUploadUrl(docs.selfieUrl))
@@ -90,26 +87,14 @@ export default function LandlordVerificationPage() {
     return () => {
       cancelled = true
     }
-  }, [user?.id])
+  }, [user?.id, user?.icNumber])
 
-  function triggerFileInput(slot) {
-    if (slot === 'matric') grantInputRef.current?.click()
-    else selfieInputRef.current?.click()
-  }
-
-  async function onChooseFile(slot, e) {
-    if (!user?.id || slot === 'ic') return
-    if (!e?.target?.files) {
-      triggerFileInput(slot)
-      return
-    }
-    const file = e.target.files?.[0]
-    if (!file) return
+  async function handleDocumentUpload(slot, file) {
+    if (!user?.id || !file) return
     if (!file.type.startsWith('image/')) {
-      pushToast({ message: 'Please choose an image file.', type: 'error' })
+      pushToast({ message: 'Please choose a JPG or PNG image.', type: 'error' })
       return
     }
-
     setUploadingSlot(slot)
     try {
       const uploaded = await uploadVerificationDocument(apiSlotForUi(slot), file)
@@ -124,34 +109,16 @@ export default function LandlordVerificationPage() {
       else setSelfieUrl(url)
       setFileMeta((prev) => ({ ...prev, [slot]: meta }))
       setSubmittedAt(null)
+      setRejectionReason('')
       pushToast({ message: 'Document uploaded.', type: 'success' })
     } catch (err) {
       pushToast({ message: err.message || 'Upload failed.', type: 'error' })
     } finally {
       setUploadingSlot(null)
-      e.target.value = ''
     }
   }
 
-  async function handleIcConfirmed({ icNumber, extractedName }) {
-    await confirmIcVerification(icNumber, extractedName || '')
-    setIcConfirmed(true)
-    setSubmittedAt(null)
-    removeVerificationDoc(user.id, 'ic')
-    pushToast({ message: 'IC verified and saved securely.', type: 'success' })
-  }
-
-  async function handleIcClear() {
-    try {
-      await clearIcVerification()
-    } catch {
-      /* local clear still applies */
-    }
-    setIcConfirmed(false)
-    removeVerificationDoc(user.id, 'ic')
-  }
-
-  function handleRemoveFile(slot) {
+  function handleDocumentClear(slot) {
     if (!user?.id || slot === 'ic') return
     removeVerificationDoc(user.id, slot)
     if (slot === 'matric') setGrantUrl('')
@@ -162,9 +129,27 @@ export default function LandlordVerificationPage() {
       return next
     })
     setSubmittedAt(null)
-    if (slot === 'matric' && grantInputRef.current) grantInputRef.current.value = ''
-    if (slot === 'selfie' && selfieInputRef.current) selfieInputRef.current.value = ''
-    pushToast({ message: 'File removed.', type: 'success' })
+  }
+
+  async function handleIcConfirmed({ icNumber, extractedName }) {
+    const result = await confirmIcVerification(icNumber, extractedName || '')
+    setIcConfirmed(true)
+    setConfirmedIc(result.icNumber || icNumber)
+    setSubmittedAt(null)
+    setRejectionReason('')
+    removeVerificationDoc(user.id, 'ic')
+    pushToast({ message: 'IC number saved securely.', type: 'success' })
+  }
+
+  async function handleIcClear() {
+    try {
+      await clearIcVerification()
+    } catch {
+      /* ignore */
+    }
+    setIcConfirmed(false)
+    setConfirmedIc('')
+    removeVerificationDoc(user.id, 'ic')
   }
 
   async function handleClearAll() {
@@ -177,12 +162,12 @@ export default function LandlordVerificationPage() {
     }
     clearVerificationDocs(user.id)
     setIcConfirmed(false)
+    setConfirmedIc('')
     setGrantUrl('')
     setSelfieUrl('')
     setFileMeta({})
     setSubmittedAt(null)
-    if (grantInputRef.current) grantInputRef.current.value = ''
-    if (selfieInputRef.current) selfieInputRef.current.value = ''
+    setRejectionReason('')
     pushToast({ message: 'All verification files cleared.', type: 'success' })
   }
 
@@ -197,9 +182,10 @@ export default function LandlordVerificationPage() {
       const result = await submitVerificationForReview()
       const submitted = result.submittedAt || new Date().toISOString()
       setSubmittedAt(submitted)
+      setDocStatus('pending_review')
+      setRejectionReason('')
       pushToast({
-        message:
-          'Documents submitted for review. MySewa will verify your identity — you will be notified when approved.',
+        message: 'Your verification documents have been submitted for review.',
         type: 'success',
         duration: 6000,
       })
@@ -236,23 +222,24 @@ export default function LandlordVerificationPage() {
     <LandlordLayout>
       <LandlordVerification
         verificationState={verificationState}
-        verificationLabel={VERIFICATION_STATE_LABEL[verificationState] || 'Pending'}
+        verificationLabel={verificationLabel}
+        rejectionReason={rejectionReason}
         progressSteps={verificationState === 'verified' ? 4 : steps}
         progressPercent={verificationState === 'verified' ? 100 : percent}
         icConfirmed={icConfirmed}
         registeredName={user?.fullName || ''}
-        registeredIc={user?.icNumber || ''}
+        registeredIc={confirmedIc || user?.icNumber || ''}
         grantUrl={grantUrl}
         selfieUrl={selfieUrl}
         fileMeta={fileMeta}
         submittedAt={submittedAt}
         submitting={submitting || uploadingSlot != null}
-        grantInputRef={grantInputRef}
-        selfieInputRef={selfieInputRef}
-        onChooseFile={onChooseFile}
+        icProcessing={icProcessing}
+        onIcProcessingChange={setIcProcessing}
+        onDocumentUpload={handleDocumentUpload}
+        onDocumentClear={handleDocumentClear}
         onIcConfirmed={handleIcConfirmed}
         onIcClear={handleIcClear}
-        onRemoveFile={handleRemoveFile}
         onSubmit={handleSubmit}
         onClearAll={handleClearAll}
       />

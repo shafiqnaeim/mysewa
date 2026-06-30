@@ -8,6 +8,8 @@ import { useToast } from '../context/ToastContext'
 import { showBookingDecisionNotification } from '../components/common/NotificationToast'
 import { parsePropertyDeposit } from '../utils/propertyDeposit'
 import StudentBookings from './dashboard/StudentBookings'
+import ReviewForm from '../components/student/ReviewForm'
+import { fetchStudentReviews } from '../services/reviewService'
 
 const BOOKING_STATUS_SEEN_KEY = 'mysewa_student_booking_status_seen'
 
@@ -85,6 +87,8 @@ export default function StudentBookingsPage() {
   const [loading, setLoading] = useState(true)
   const [detailApp, setDetailApp] = useState(null)
   const [depositModalApp, setDepositModalApp] = useState(null)
+  const [reviewTarget, setReviewTarget] = useState(null)
+  const [reviewedPropertyIds, setReviewedPropertyIds] = useState(() => new Set())
 
   const loadApplications = useCallback(async () => {
     const token = localStorage.getItem('mysewa_token')
@@ -126,6 +130,29 @@ export default function StudentBookingsPage() {
   useEffect(() => {
     if (user?.id) loadApplications()
   }, [user?.id, loadApplications])
+
+  const loadReviewedProperties = useCallback(async () => {
+    const token = localStorage.getItem('mysewa_token')
+    if (!token) {
+      setReviewedPropertyIds(new Set())
+      return
+    }
+    try {
+      const data = await fetchStudentReviews(token)
+      const ids = new Set(
+        (Array.isArray(data.items) ? data.items : [])
+          .map((r) => Number(r.propertyId))
+          .filter((id) => Number.isFinite(id)),
+      )
+      setReviewedPropertyIds(ids)
+    } catch {
+      setReviewedPropertyIds(new Set())
+    }
+  }, [])
+
+  useEffect(() => {
+    if (user?.id) loadReviewedProperties()
+  }, [user?.id, loadReviewedProperties])
 
   function mergeApplicationRow(updated) {
     if (!updated?.id) return
@@ -188,12 +215,27 @@ export default function StudentBookingsPage() {
         />
       ) : null}
 
+      {reviewTarget ? (
+        <ReviewForm
+          propertyId={reviewTarget.propertyId}
+          bookingId={reviewTarget.id}
+          propertyName={reviewTarget.propertyName}
+          onClose={() => setReviewTarget(null)}
+          onSubmitted={() => {
+            loadReviewedProperties()
+            setReviewTarget(null)
+          }}
+        />
+      ) : null}
+
       <StudentBookings
         applications={applications}
         propertyById={propertyById}
         loading={loading}
         onViewDetails={setDetailApp}
         onPayDeposit={handlePayDeposit}
+        onLeaveReview={setReviewTarget}
+        reviewedPropertyIds={reviewedPropertyIds}
         onBrowse={() => navigate('/properties')}
       />
     </StudentLayout>

@@ -13,6 +13,7 @@ import com.mysewa.api.repo.FinancialTransactionRepository;
 import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.repo.UniversityRepository;
 import com.mysewa.api.repo.UserAccountRepository;
+import com.mysewa.api.service.AdminService;
 import com.mysewa.api.service.AuthService;
 import com.mysewa.api.service.VerificationService;
 import org.springframework.data.domain.Page;
@@ -61,6 +62,7 @@ public class AdminController {
     private final ApplicationRentMonthRecordRepository rentMonthRecordRepository;
     private final AuthService authService;
     private final VerificationService verificationService;
+    private final AdminService adminService;
 
     public AdminController(
             UserAccountRepository userAccountRepository,
@@ -70,7 +72,8 @@ public class AdminController {
             FinancialTransactionRepository financialTransactionRepository,
             ApplicationRentMonthRecordRepository rentMonthRecordRepository,
             AuthService authService,
-            VerificationService verificationService
+            VerificationService verificationService,
+            AdminService adminService
     ) {
         this.userAccountRepository = userAccountRepository;
         this.propertyRepository = propertyRepository;
@@ -80,6 +83,7 @@ public class AdminController {
         this.rentMonthRecordRepository = rentMonthRecordRepository;
         this.authService = authService;
         this.verificationService = verificationService;
+        this.adminService = adminService;
     }
 
     @GetMapping({"/stats", "/statistics"})
@@ -113,6 +117,18 @@ public class AdminController {
         body.put("applicationsRejected", applicationsRejected);
         body.put("universitiesTotal", universitiesTotal);
         return ResponseEntity.ok(body);
+    }
+
+    @GetMapping("/properties/count-by-type")
+    public ResponseEntity<?> propertyCountByType(
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        try {
+            requireAdmin(authorization);
+        } catch (IllegalArgumentException ex) {
+            return adminAuthError(ex);
+        }
+        return ResponseEntity.ok(adminService.countPropertiesByType());
     }
 
     @GetMapping("/payments")

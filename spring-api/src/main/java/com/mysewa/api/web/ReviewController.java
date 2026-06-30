@@ -9,7 +9,11 @@ import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.repo.PropertyReviewRepository;
 import com.mysewa.api.repo.UserAccountRepository;
 import com.mysewa.api.service.AuthService;
+import com.mysewa.api.service.ReviewService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -21,9 +25,10 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -40,19 +45,57 @@ public class ReviewController {
     private final ApplicationRepository applicationRepository;
     private final UserAccountRepository userAccountRepository;
     private final AuthService authService;
+    private final ReviewService reviewService;
 
     public ReviewController(
             PropertyReviewRepository propertyReviewRepository,
             PropertyRepository propertyRepository,
             ApplicationRepository applicationRepository,
             UserAccountRepository userAccountRepository,
-            AuthService authService
+            AuthService authService,
+            ReviewService reviewService
     ) {
         this.propertyReviewRepository = propertyReviewRepository;
         this.propertyRepository = propertyRepository;
         this.applicationRepository = applicationRepository;
         this.userAccountRepository = userAccountRepository;
         this.authService = authService;
+        this.reviewService = reviewService;
+    }
+
+    @GetMapping("/average")
+    public ResponseEntity<Map<String, Object>> averageRating() {
+        Double avg = propertyReviewRepository.averageOverallRating();
+        long reviewCount = propertyReviewRepository.count();
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (avg != null) {
+            body.put("average", Math.round(avg * 10.0) / 10.0);
+        } else {
+            body.put("average", null);
+        }
+        body.put("count", reviewCount);
+        return ResponseEntity.ok(body);
+    }
+
+    @GetMapping
+    public ResponseEntity<Map<String, Object>> listRecent(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "10") int limit
+    ) {
+        int capped = Math.min(Math.max(limit, 1), 50);
+        Page<PropertyReview> page = propertyReviewRepository.findAllByOrderByCreatedAtDesc(
+                PageRequest.of(0, capped)
+        );
+        List<ReviewItemResponse> items = new ArrayList<>();
+        for (PropertyReview r : page.getContent()) {
+            UserAccount student = userAccountRepository.findById(r.getStudentId()).orElse(null);
+            ReviewItemResponse item = ReviewItemResponse.from(r, student);
+            if (r.getPropertyId() != null) {
+                propertyRepository.findById(r.getPropertyId())
+                        .ifPresent(p -> item.propertyName = p.getName());
+            }
+            items.add(item);
+        }
+        return ResponseEntity.ok(Map.of("items", items, "count", items.size()));
     }
 
     @GetMapping({"/for-property/{propertyId}", "/property/{propertyId}"})
@@ -67,7 +110,12 @@ public class ReviewController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Property not found"));
         }
 
-        List<PropertyReview> rows = propertyReviewRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId);
+        List<PropertyReview> rows;
+        try {
+            rows = propertyReviewRepository.findByPropertyIdOrderByCreatedAtDesc(propertyId);
+        } catch (Exception ex) {
+            rows = List.of();
+        }
         List<ReviewItemResponse> items = new ArrayList<>();
         for (PropertyReview r : rows) {
             UserAccount st = userAccountRepository.findById(r.getStudentId()).orElse(null);
@@ -83,8 +131,7 @@ public class ReviewController {
                 if (mine.isPresent()) {
                     myReview = ReviewItemResponse.from(mine.get(), u);
                 } else {
-                    Optional<Application> app = applicationRepository.findByPropertyIdAndStudentId(propertyId, u.getId());
-                    canSubmitReview = app.isPresent() && "accepted".equalsIgnoreCase(nullSafe(app.get().getStatus()));
+                    canSubmitReview = reviewService.canStudentSubmitReview(propertyId, u.getId());
                 }
             }
         } catch (IllegalArgumentException ignored) {
@@ -93,6 +140,7 @@ public class ReviewController {
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("items", items);
+        body.put("aggregates", reviewService.aggregatesForProperty(propertyId));
         body.put("canSubmitReview", canSubmitReview);
         body.put("myReview", myReview);
         return ResponseEntity.ok(body);
@@ -111,51 +159,44 @@ public class ReviewController {
             return unauthorizedOrForbidden(ex);
         }
 
-        if (request == null || request.getPropertyId() == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "propertyId is required"));
+        try {
+            PropertyReview saved = reviewService.createReview(student, request);
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                    "success", true,
+                    "message", "Review submitted successfully.",
+                    "item", ReviewItemResponse.from(saved, student)
+            ));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
+        } catch (IllegalArgumentException ex) {
+            String msg = ex.getMessage() != null ? ex.getMessage() : "Unable to submit review";
+            HttpStatus status = "Property not found".equals(msg) ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("message", msg));
         }
-        if (request.getRating() == null || request.getRating() < 1 || request.getRating() > 5) {
-            return ResponseEntity.badRequest().body(Map.of("message", "rating must be between 1 and 5"));
-        }
-        String comment = request.getComment() == null ? "" : request.getComment().trim();
-        if (comment.length() < 10) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Please write at least 10 characters for your review."));
-        }
-        if (comment.length() > 4000) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Review is too long."));
-        }
+    }
 
-        Optional<PropertyEntity> propOpt = propertyRepository.findById(request.getPropertyId());
-        if (propOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Property not found"));
+    @PostMapping(value = "/photos", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadPhotos(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestPart("images") MultipartFile[] images
+    ) {
+        UserAccount student;
+        try {
+            student = requireStudent(authorization);
+        } catch (IllegalArgumentException ex) {
+            return unauthorizedOrForbidden(ex);
         }
-        PropertyEntity property = propOpt.get();
-        if (property.getLandlordId() != null && property.getLandlordId().equals(student.getId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You cannot review your own listing"));
-        }
-
-        Optional<Application> app = applicationRepository.findByPropertyIdAndStudentId(request.getPropertyId(), student.getId());
-        if (app.isEmpty() || !"accepted".equalsIgnoreCase(nullSafe(app.get().getStatus()))) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+        try {
+            List<String> files = reviewService.uploadReviewPhotos(student, images);
+            return ResponseEntity.ok(Map.of("files", files, "count", files.size()));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "message",
-                    "You can only leave a review after the landlord has accepted your rental application for this property."
+                    ex.getMessage() != null ? ex.getMessage() : "Photo upload failed"
             ));
         }
-
-        if (propertyReviewRepository.existsByPropertyIdAndStudentId(request.getPropertyId(), student.getId())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "You have already reviewed this property"));
-        }
-
-        PropertyReview r = new PropertyReview();
-        r.setPropertyId(request.getPropertyId());
-        r.setStudentId(student.getId());
-        r.setRating(request.getRating());
-        r.setComment(comment);
-        LocalDateTime now = LocalDateTime.now();
-        r.setCreatedAt(now);
-        PropertyReview saved = propertyReviewRepository.save(r);
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("item", ReviewItemResponse.from(saved, student)));
     }
 
     @GetMapping({"/for-student", "/student"})
@@ -205,7 +246,13 @@ public class ReviewController {
         }
 
         List<ReviewItemResponse> items = new ArrayList<>();
-        for (PropertyReview r : propertyReviewRepository.findByPropertyIdInOrderByCreatedAtDesc(propertyIds)) {
+        List<PropertyReview> rows;
+        try {
+            rows = propertyReviewRepository.findByPropertyIdInOrderByCreatedAtDesc(propertyIds);
+        } catch (Exception ex) {
+            rows = List.of();
+        }
+        for (PropertyReview r : rows) {
             UserAccount student = userAccountRepository.findById(r.getStudentId()).orElse(null);
             ReviewItemResponse item = ReviewItemResponse.from(r, student);
             item.propertyName = propertyNames.getOrDefault(r.getPropertyId(), "Property #" + r.getPropertyId());
@@ -232,33 +279,19 @@ public class ReviewController {
         if (reviewId == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "reviewId is required"));
         }
-        Optional<PropertyReview> rowOpt = propertyReviewRepository.findById(reviewId);
-        if (rowOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "Review not found"));
+        try {
+            PropertyReview saved = reviewService.updateReview(student, reviewId, request);
+            ReviewItemResponse item = ReviewItemResponse.from(saved, student);
+            PropertyEntity property = propertyRepository.findById(saved.getPropertyId()).orElse(null);
+            item.propertyName = property != null ? property.getName() : "Property #" + saved.getPropertyId();
+            return ResponseEntity.ok(Map.of("item", item));
+        } catch (IllegalStateException ex) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", ex.getMessage()));
+        } catch (IllegalArgumentException ex) {
+            String msg = ex.getMessage() != null ? ex.getMessage() : "Unable to update review";
+            HttpStatus status = "Review not found".equals(msg) ? HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("message", msg));
         }
-        PropertyReview row = rowOpt.get();
-        if (!student.getId().equals(row.getStudentId())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "You can only edit your own reviews"));
-        }
-
-        if (request == null || request.getRating() == null || request.getRating() < 1 || request.getRating() > 5) {
-            return ResponseEntity.badRequest().body(Map.of("message", "rating must be between 1 and 5"));
-        }
-        String comment = request.getComment() == null ? "" : request.getComment().trim();
-        if (comment.length() < 10) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Please write at least 10 characters for your review."));
-        }
-        if (comment.length() > 4000) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Review is too long."));
-        }
-
-        row.setRating(request.getRating());
-        row.setComment(comment);
-        PropertyReview saved = propertyReviewRepository.save(row);
-        ReviewItemResponse item = ReviewItemResponse.from(saved, student);
-        PropertyEntity property = propertyRepository.findById(saved.getPropertyId()).orElse(null);
-        item.propertyName = property != null ? property.getName() : "Property #" + saved.getPropertyId();
-        return ResponseEntity.ok(Map.of("item", item));
     }
 
     @DeleteMapping("/{reviewId}")

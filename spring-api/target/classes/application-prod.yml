@@ -1,0 +1,17 @@
+# Activate with: SPRING_PROFILES_ACTIVE=prod
+spring:
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    root: WARN
+    com.mysewa: INFO
+    org.springframework.web: WARN
+    org.hibernate: WARN
+
+app:
+  demo:
+    enabled: false
+  payment:
+    dev-allow-deposit-reset: false

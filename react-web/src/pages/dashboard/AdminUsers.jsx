@@ -1,3 +1,6 @@
+import { getIdentityAdminState } from '../../utils/verificationStatus'
+import { resolveUploadUrl } from '../../services/verificationApi'
+
 const inputClass =
   'w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2.5 text-sm text-[#1A1A2E] outline-none focus:border-[#DC2626] focus:ring-2 focus:ring-[#DC2626]/20'
 
@@ -25,22 +28,40 @@ function RoleBadge({ role }) {
   return <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${classes}`}>{label}</span>
 }
 
-function VerifiedCell({ verified, docStatus }) {
-  const pending =
-    docStatus &&
-    !String(docStatus).toLowerCase().includes('verified') &&
-    !String(docStatus).toLowerCase().includes('exempt') &&
-    String(docStatus).toLowerCase() !== 'not_submitted'
-  if (verified && !pending) {
+function IdentityBadge({ docStatus, role }) {
+  const r = String(role || '').toLowerCase()
+  if (r === 'admin') {
+    return <span className="text-xs text-[#9CA3AF]">—</span>
+  }
+
+  const state = getIdentityAdminState(docStatus)
+  const styles = {
+    verified: 'bg-green-100 text-green-800',
+    pending: 'bg-yellow-100 text-yellow-800',
+    rejected: 'bg-red-100 text-red-800',
+  }
+  const icons = { verified: '✅', pending: '⏳', rejected: '❌' }
+  const labels = { verified: 'Verified', pending: 'Pending', rejected: 'Rejected' }
+
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${styles[state]}`}>
+      <span aria-hidden="true">{icons[state]}</span>
+      {labels[state]}
+    </span>
+  )
+}
+
+function EmailVerifiedBadge({ verified }) {
+  if (verified) {
     return (
-      <span className="text-[#10B981]">
-        <span aria-hidden="true">✅</span> Yes
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-[#10B981]">
+        <span aria-hidden="true">✅</span> Email verified
       </span>
     )
   }
   return (
-    <span className="text-[#F59E0B]">
-      <span aria-hidden="true">⚠️</span> Pending
+    <span className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7280]">
+      <span aria-hidden="true">○</span> Email not verified
     </span>
   )
 }
@@ -128,6 +149,7 @@ function Pagination({ page, totalPages, total, pageSize, onPageChange }) {
 function UserDetailModal({
   user,
   detailLoading,
+  detailVerification,
   bookings,
   properties,
   activity,
@@ -137,6 +159,7 @@ function UserDetailModal({
   onToggleStatus,
   onDelete,
   onVerify,
+  onOpenVerification,
 }) {
   if (!user) return null
 
@@ -184,17 +207,101 @@ function UserDetailModal({
               <dt className="text-xs font-semibold uppercase text-[#6B7280]">Joined</dt>
               <dd className="mt-1 text-sm text-[#1A1A2E]">{user.joinedDisplay}</dd>
             </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase text-[#6B7280]">Email</dt>
+              <dd className="mt-1">
+                <EmailVerifiedBadge verified={user.verified} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase text-[#6B7280]">Identity</dt>
+              <dd className="mt-1">
+                <IdentityBadge docStatus={user.documentVerificationStatus} role={user.role} />
+              </dd>
+            </div>
             {user.university ? (
               <div className="sm:col-span-2">
                 <dt className="text-xs font-semibold uppercase text-[#6B7280]">University</dt>
                 <dd className="mt-1 text-sm text-[#1A1A2E]">{user.university}</dd>
               </div>
             ) : null}
-            <div className="sm:col-span-2">
-              <dt className="text-xs font-semibold uppercase text-[#6B7280]">Document verification</dt>
-              <dd className="mt-1 text-sm text-[#1A1A2E]">{user.documentVerificationStatus || '—'}</dd>
-            </div>
           </dl>
+
+          {role === 'student' || role === 'landlord' ? (
+            <section>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-[#1A1A2E]">Verification documents</h3>
+                {onOpenVerification ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenVerification(user)}
+                    className="rounded-lg bg-[#DC2626] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#B91C1C]"
+                  >
+                    Review verification
+                  </button>
+                ) : null}
+              </div>
+              {detailLoading ? (
+                <p className="mt-2 text-sm text-[#6B7280]">Loading documents…</p>
+              ) : !detailVerification ? (
+                <p className="mt-2 text-sm text-[#6B7280]">No verification documents on file.</p>
+              ) : (
+                <div className="mt-3 space-y-4">
+                  {detailVerification.submittedAt ? (
+                    <p className="text-xs text-[#6B7280]">
+                      Submitted {new Date(detailVerification.submittedAt).toLocaleString()}
+                    </p>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {detailVerification.grantUrl ? (
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase text-[#6B7280]">
+                          {detailVerification.grantLabel || 'Document'}
+                        </p>
+                        <img
+                          src={resolveUploadUrl(detailVerification.grantUrl)}
+                          alt=""
+                          className="max-h-40 w-full rounded-lg border border-[#E2E8F0] object-contain"
+                        />
+                      </div>
+                    ) : null}
+                    {detailVerification.selfieUrl ? (
+                      <div>
+                        <p className="mb-2 text-xs font-semibold uppercase text-[#6B7280]">Selfie</p>
+                        <img
+                          src={resolveUploadUrl(detailVerification.selfieUrl)}
+                          alt=""
+                          className="max-h-40 w-full rounded-lg border border-[#E2E8F0] object-cover"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                  {detailVerification.systemChecks ? (
+                    <ul className="space-y-1 rounded-lg bg-[#FAFAFA] p-3 text-sm text-[#4B5563]">
+                      <li>
+                        <span aria-hidden="true">
+                          {detailVerification.systemChecks.icFormatValid ? '✅' : '❌'}{' '}
+                        </span>
+                        IC format valid
+                      </li>
+                      <li>
+                        <span aria-hidden="true">
+                          {detailVerification.systemChecks.noDuplicateAccount ? '✅' : '❌'}{' '}
+                        </span>
+                        No duplicate account
+                      </li>
+                      <li>
+                        <span aria-hidden="true">
+                          {detailVerification.systemChecks.nameMatchesSystem ? '✅' : '❌'}{' '}
+                        </span>
+                        Name matches system
+                      </li>
+                    </ul>
+                  ) : null}
+                </div>
+              )}
+            </section>
+          ) : null}
 
           <section>
             <h3 className="text-sm font-bold text-[#1A1A2E]">Activity history</h3>
@@ -302,6 +409,7 @@ export default function AdminUsers({
   filteredTotal,
   detailUser,
   detailLoading,
+  detailVerification,
   detailBookings,
   detailProperties,
   detailActivity,
@@ -324,6 +432,7 @@ export default function AdminUsers({
   onDeleteUser,
   onBulkSuspend,
   onBulkDelete,
+  onOpenVerification,
 }) {
   const allSelected = users.length > 0 && users.every((u) => selectedIds.has(u.id))
 
@@ -438,9 +547,8 @@ export default function AdminUsers({
                     <th className="px-3 py-3">User</th>
                     <th className="px-3 py-3">Email</th>
                     <th className="px-3 py-3">Role</th>
+                    <th className="px-3 py-3">Identity</th>
                     <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">Verified</th>
-                    <th className="px-3 py-3">Joined</th>
                     <th className="px-3 py-3">Actions</th>
                   </tr>
                 </thead>
@@ -468,12 +576,11 @@ export default function AdminUsers({
                           <RoleBadge role={row.role} />
                         </td>
                         <td className="px-3 py-3">
-                          <StatusBadge status={row.displayStatus} />
+                          <IdentityBadge docStatus={row.documentVerificationStatus} role={row.role} />
                         </td>
                         <td className="px-3 py-3">
-                          <VerifiedCell verified={row.verified} docStatus={row.documentVerificationStatus} />
+                          <StatusBadge status={row.displayStatus} />
                         </td>
-                        <td className="px-3 py-3 text-[#6B7280]">{row.joinedDisplay}</td>
                         <td className="px-3 py-3">
                           <div className="flex flex-wrap gap-2">
                             <button
@@ -524,6 +631,7 @@ export default function AdminUsers({
       <UserDetailModal
         user={detailUser}
         detailLoading={detailLoading}
+        detailVerification={detailVerification}
         bookings={detailBookings}
         properties={detailProperties}
         activity={detailActivity}
@@ -533,6 +641,7 @@ export default function AdminUsers({
         onToggleStatus={() => detailUser && onSuspendUser(detailUser)}
         onDelete={() => detailUser && onDeleteUser(detailUser)}
         onVerify={() => detailUser && onVerifyUser(detailUser)}
+        onOpenVerification={onOpenVerification}
       />
     </div>
   )

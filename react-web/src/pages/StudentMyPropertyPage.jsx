@@ -3,12 +3,23 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import StudentLayout from '../components/StudentLayout'
 import StudentDepositModal from '../components/StudentDepositModal'
 import StudentRentPaymentHintModal from '../components/StudentRentPaymentHintModal'
+import ReceiptModal from '../components/ReceiptModal'
 import { useStudentGuard } from '../hooks/useStudentGuard'
 import { useToast } from '../context/ToastContext'
 import { formatDateShort, monthOverlapsLease, parseLeaseRange } from '../utils/rentCalendarUtils'
+import { formatPropertyLocationLine } from '../utils/propertyDisplay'
+import { buildDepositReceiptData, buildRentReceiptData } from '../utils/ReceiptGenerator'
+import { fetchRentPaymentReceipt } from '../services/rentPaymentService'
 import StudentMyProperty from './dashboard/StudentMyProperty'
+import ReviewForm from '../components/student/ReviewForm'
+import { fetchStudentReviews } from '../services/reviewService'
+import { canLeaveReview } from '../utils/reviewEligibility'
 
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const MONTH_FULL = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
 
 function isLandlordDepositConfigured(app) {
   if (!app) return false
@@ -50,22 +61,34 @@ export default function StudentMyPropertyPage() {
   const [myApplications, setMyApplications] = useState([])
   const [myApplicationsLoading, setMyApplicationsLoading] = useState(false)
   const [depositModalApp, setDepositModalApp] = useState(null)
+  const [receiptModalData, setReceiptModalData] = useState(null)
   const [depositResetAllowed, setDepositResetAllowed] = useState(false)
   const [depositResetSavingId, setDepositResetSavingId] = useState(null)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [reviewedPropertyIds, setReviewedPropertyIds] = useState(() => new Set())
 
-  const acceptedApplications = useMemo(
-    () => myApplications.filter((a) => String(a.status || '').toLowerCase() === 'accepted' && a.propertyId != null),
+  const tenancyApplications = useMemo(
+    () =>
+      myApplications.filter((a) => {
+        const status = String(a.status || '').toLowerCase()
+        return (status === 'accepted' || status === 'completed') && a.propertyId != null
+      }),
     [myApplications],
   )
 
   const primaryApplication = useMemo(() => {
-    if (!acceptedApplications.length) return null
-    return [...acceptedApplications].sort((a, b) => {
+    if (!tenancyApplications.length) return null
+    return [...tenancyApplications].sort((a, b) => {
       const ta = new Date(a.updatedAt || a.createdAt || 0).getTime()
       const tb = new Date(b.updatedAt || b.createdAt || 0).getTime()
       return tb - ta
     })[0]
-  }, [acceptedApplications])
+  }, [tenancyApplications])
+
+  const showLeaveReview = useMemo(
+    () => canLeaveReview(primaryApplication, reviewedPropertyIds),
+    [primaryApplication, reviewedPropertyIds],
+  )
 
   const loadMyReports = useCallback(async () => {
     const pid = primaryApplication?.propertyId
@@ -89,6 +112,29 @@ export default function StudentMyPropertyPage() {
       setMyReportsLoading(false)
     }
   }, [primaryApplication?.propertyId, myReportsRefresh, pushToast])
+
+  const loadReviewedProperties = useCallback(async () => {
+    const token = localStorage.getItem('mysewa_token')
+    if (!token) {
+      setReviewedPropertyIds(new Set())
+      return
+    }
+    try {
+      const data = await fetchStudentReviews(token)
+      const ids = new Set(
+        (Array.isArray(data.items) ? data.items : [])
+          .map((r) => Number(r.propertyId))
+          .filter((id) => Number.isFinite(id)),
+      )
+      setReviewedPropertyIds(ids)
+    } catch {
+      setReviewedPropertyIds(new Set())
+    }
+  }, [])
+
+  useEffect(() => {
+    if (user?.id) loadReviewedProperties()
+  }, [user?.id, loadReviewedProperties])
 
   useEffect(() => {
     void loadMyReports()
@@ -238,10 +284,20 @@ export default function StudentMyPropertyPage() {
     primaryApplication?.id,
   ])
 
-  const onRentCalendarSaved = useCallback(() => {
-    void loadRentCalendar()
-    setPayRentHintMonth(null)
-  }, [loadRentCalendar])
+  const onRentCalendarSaved = useCallback(
+    (data) => {
+      if (data) {
+        if (Array.isArray(data.studentRentPaymentLogs)) {
+          setStudentRentPaymentLogs(data.studentRentPaymentLogs)
+        }
+        if (Array.isArray(data.paidMonths)) setPaidMonths(data.paidMonths.map((n) => Number(n)))
+        if (Array.isArray(data.rentMonthRecords)) setRentMonthRecords(data.rentMonthRecords)
+      } else {
+        void loadRentCalendar()
+      }
+    },
+    [loadRentCalendar],
+  )
 
   useEffect(() => {
     if (!primaryApplication?.id) {
@@ -374,6 +430,27 @@ export default function StudentMyPropertyPage() {
     })
   }, [payYear, paidMonths, studentLoggedMonths, leaseRange, recordByMonth])
 
+  const rentMonthRows = useMemo(() => {
+    return monthCells
+      .filter((c) => !c.outsideLease && (c.paid || c.studentLogged))
+      .map((c) => {
+        const rec = recordByMonth.get(c.m)
+        const log = studentRentPaymentLogs.find((l) => Number(l.month) === c.m)
+        const amount =
+          rec?.amount != null && Number.isFinite(Number(rec.amount))
+            ? Number(rec.amount)
+            : rentCalendarMonthlyRent
+        return {
+          month: c.m,
+          monthLabel: `${MONTH_FULL[c.m - 1]} ${payYear}`,
+          amount,
+          paid: c.paid,
+          paymentLogId: log?.paymentLogId,
+        }
+      })
+      .sort((a, b) => a.month - b.month)
+  }, [monthCells, recordByMonth, studentRentPaymentLogs, payYear, rentCalendarMonthlyRent])
+
   const rentCalendarTenancyLine = useMemo(() => {
     if (!leaseRange) return null
     return `Tenancy: ${formatDateShort(leaseRange.moveIn)} → ${formatDateShort(leaseRange.moveOut)}. Months outside this range are not part of your lease on MySewa.`
@@ -487,24 +564,85 @@ export default function StudentMyPropertyPage() {
     onRentMonthClick(next.m)
   }
 
-  async function handleViewReceipt() {
+  function handleViewMonthReceipt(month) {
+    const log = studentRentPaymentLogs.find((l) => Number(l.month) === month)
+    const rec = recordByMonth.get(month)
+    const token = localStorage.getItem('mysewa_token')
+
+    async function openReceipt() {
+      if (log?.paymentLogId && token) {
+        try {
+          const receipt = await fetchRentPaymentReceipt(log.paymentLogId, token)
+          if (receipt) {
+            setReceiptModalData(receipt)
+            return
+          }
+        } catch {
+          /* fall through to client-built receipt */
+        }
+      }
+
+      const amount =
+        rec?.amount != null && Number.isFinite(Number(rec.amount))
+          ? Number(rec.amount)
+          : rentCalendarMonthlyRent
+      setReceiptModalData(
+        buildRentReceiptData({
+          bookingId: primaryApplication?.id,
+          year: payYear,
+          month,
+          amount,
+          paymentMethod: log?.paymentMethod || rec?.channel,
+          paymentLogId: log?.paymentLogId,
+          studentName: user?.fullName,
+          propertyName: propertyDetail?.name ?? primaryApplication?.propertyName,
+          propertyAddress:
+            propertyDetail && formatPropertyLocationLine(propertyDetail) !== 'Location not set'
+              ? formatPropertyLocationLine(propertyDetail)
+              : '',
+          landlordName: propertyDetail?.landlordName,
+          recordedAt: rec?.recordedAt,
+          loggedAt: log?.loggedAt,
+        }),
+      )
+    }
+
+    void openReceipt()
+  }
+
+  function handleViewReceipt() {
     if (!primaryApplication?.depositPaid) {
       pushToast({ message: 'Deposit has not been paid yet.', type: 'info' })
       return
     }
+    setReceiptModalData(
+      buildDepositReceiptData({
+        application: primaryApplication,
+        propertyDetail,
+        propertyAddress:
+          propertyDetail && formatPropertyLocationLine(propertyDetail) !== 'Location not set'
+            ? formatPropertyLocationLine(propertyDetail)
+            : undefined,
+        studentName: user?.fullName,
+        landlordName: propertyDetail?.landlordName,
+      }),
+    )
+  }
+
+  async function handleViewAgreement() {
     const token = localStorage.getItem('mysewa_token')
     if (!token || !primaryApplication?.id) return
     try {
       const res = await fetch(`/api/v1/applications/${primaryApplication.id}/agreement`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      if (!res.ok) throw new Error(`Could not load receipt (${res.status})`)
+      if (!res.ok) throw new Error(`Could not load agreement (${res.status})`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener,noreferrer')
       window.setTimeout(() => URL.revokeObjectURL(url), 120000)
     } catch (e) {
-      pushToast({ message: e.message || 'Receipt could not be opened.', type: 'error' })
+      pushToast({ message: e.message || 'Agreement could not be opened.', type: 'error' })
     }
   }
 
@@ -546,11 +684,36 @@ export default function StudentMyPropertyPage() {
           month={payRentHintMonth}
           monthLabel={`${MONTH_SHORT[payRentHintMonth - 1]} ${payYear}`}
           monthlyRent={rentCalendarMonthlyRent ?? propertyDetail?.price ?? null}
+          propertyName={propertyDetail?.name ?? primaryApplication?.propertyName}
+          propertyLocation={formatPropertyLocationLine(propertyDetail)}
+          bankName={propertyDetail?.bankName}
+          bankAccount={propertyDetail?.accountNumber}
+          bankHolder={propertyDetail?.accountHolder}
+          qrImageUrl={propertyDetail?.qrCodeUrl}
           existingLog={
             studentRentPaymentLogs.find((l) => Number(l.month) === payRentHintMonth) ?? null
           }
+          studentName={user?.fullName}
+          landlordName={propertyDetail?.landlordName}
+          isPaid={paidMonths.includes(payRentHintMonth)}
           onClose={() => setPayRentHintMonth(null)}
           onSaved={onRentCalendarSaved}
+        />
+      ) : null}
+      {receiptModalData ? (
+        <ReceiptModal receipt={receiptModalData} onClose={() => setReceiptModalData(null)} />
+      ) : null}
+
+      {reviewOpen && primaryApplication ? (
+        <ReviewForm
+          propertyId={primaryApplication.propertyId}
+          bookingId={primaryApplication.id}
+          propertyName={propertyDetail?.name ?? primaryApplication.propertyName}
+          onClose={() => setReviewOpen(false)}
+          onSubmitted={() => {
+            setReviewOpen(false)
+            loadReviewedProperties()
+          }}
         />
       ) : null}
 
@@ -566,6 +729,7 @@ export default function StudentMyPropertyPage() {
         payYear={payYear}
         yearOptions={yearOptions}
         monthCells={monthCells}
+        rentMonthRows={rentMonthRows}
         rentCalendarLoading={rentCalendarLoading}
         rentCalendarTenancyLine={rentCalendarTenancyLine}
         payRentHintMonth={payRentHintMonth}
@@ -580,6 +744,8 @@ export default function StudentMyPropertyPage() {
         onPayDeposit={() => primaryApplication && setDepositModalApp(primaryApplication)}
         onResetDeposit={() => primaryApplication && resetDepositForTesting(primaryApplication)}
         onViewReceipt={handleViewReceipt}
+        onViewAgreement={handleViewAgreement}
+        onViewMonthReceipt={handleViewMonthReceipt}
         onYearChange={setPayYear}
         onMonthClick={onRentMonthClick}
         onLogPayment={handleLogPayment}
@@ -590,6 +756,8 @@ export default function StudentMyPropertyPage() {
         }}
         onSubmitReport={submitReport}
         onResolveReport={resolveStudentReport}
+        showLeaveReview={showLeaveReview}
+        onLeaveReview={() => setReviewOpen(true)}
       />
     </StudentLayout>
   )

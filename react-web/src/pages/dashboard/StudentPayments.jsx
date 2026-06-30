@@ -88,9 +88,9 @@ function RentCalendarSection({
           <button
             type="button"
             onClick={onLogPayment}
-            className="rounded-lg bg-[#F59E0B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#D97706]"
+            className="rounded-lg bg-[#E88D5B] px-4 py-2 text-sm font-semibold text-white hover:bg-[#d97a48]"
           >
-            Log Payment
+            Mark as Paid
           </button>
         </div>
       ) : null}
@@ -117,7 +117,15 @@ function RentCalendarSection({
           >
             <span className="block font-semibold">{cell.label}</span>
             <span className="mt-1 block text-xs">
-              {cell.paid ? 'Paid' : cell.outsideLease ? '—' : cell.unavailable ? 'N/A' : 'Pending'}
+              {cell.paid
+                ? 'Paid'
+                : cell.outsideLease
+                  ? '—'
+                  : cell.unavailable
+                    ? 'N/A'
+                    : cell.studentLogged
+                      ? 'Pending Confirmation'
+                      : 'Pending'}
             </span>
           </button>
         ))}

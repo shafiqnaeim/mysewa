@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import PropertyAvailabilityCalendar from '../../components/PropertyAvailabilityCalendar'
+import AvailabilityCalendar from '../../components/AvailabilityCalendar'
+import { ReviewAggregatesPanel, ReviewCard } from '../../components/reviews/MultiCategoryReviewDisplay'
+import { fetchPropertyReviews } from '../../services/reviewService'
 import { useToast } from '../../context/ToastContext'
 import { AMENITY_LABELS, listAmenityIds } from '../../utils/amenities'
 import { canViewPropertyContactPayment } from '../../utils/applicationDisplayStatus'
@@ -207,20 +209,18 @@ function AmenityScrollRow({ amenityIds }) {
 function StudentReviewsBlock({ propertyId, averageRating, reviewCount, onRefresh }) {
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState([])
+  const [aggregates, setAggregates] = useState(null)
 
   const load = useCallback(async () => {
     if (!propertyId) return
     setLoading(true)
     try {
-      const token = localStorage.getItem('mysewa_token')
-      const res = await fetch(`/api/v1/reviews/for-property/${encodeURIComponent(propertyId)}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      const data = await res.json().catch(() => ({}))
-      if (res.ok) setItems(Array.isArray(data.items) ? data.items : [])
-      else setItems([])
+      const data = await fetchPropertyReviews(propertyId)
+      setItems(Array.isArray(data.items) ? data.items : [])
+      setAggregates(data.aggregates || null)
     } catch {
       setItems([])
+      setAggregates(null)
     } finally {
       setLoading(false)
     }
@@ -230,17 +230,24 @@ function StudentReviewsBlock({ propertyId, averageRating, reviewCount, onRefresh
     load()
   }, [load, onRefresh])
 
-  const score = averageRating ?? '0.0'
-  const count = reviewCount ?? 0
+  const score = aggregates?.ratingOverall ?? averageRating ?? '0.0'
+  const count = aggregates?.totalReviews ?? reviewCount ?? 0
 
   return (
     <section className="rounded-xl border border-[#E2E8F0] bg-white p-6 shadow-sm">
-      <h2 className="mb-4 text-lg font-bold text-[#2D3748]">
-        <span aria-hidden="true">⭐ </span>
-        Reviews
-      </h2>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <h2 className="text-lg font-bold text-[#2D3748]">
+          <span aria-hidden="true">⭐ </span>
+          Reviews
+        </h2>
+        <p className="text-sm text-[#718096]">
+          {Number(score).toFixed(1)} average · {count} review{count === 1 ? '' : 's'}
+        </p>
+      </div>
 
       {loading ? <p className="text-sm text-[#A0AEC0]">Loading reviews…</p> : null}
+
+      {!loading ? <ReviewAggregatesPanel aggregates={aggregates} title="Reviews & Ratings" /> : null}
 
       {!loading && items.length === 0 ? (
         <p className="rounded-lg border border-dashed border-[#E2E8F0] bg-[#FAFAFA] px-4 py-8 text-center text-sm text-[#A0AEC0]">
@@ -251,19 +258,7 @@ function StudentReviewsBlock({ propertyId, averageRating, reviewCount, onRefresh
       {!loading && items.length > 0 ? (
         <ul className="space-y-4">
           {items.map((r) => (
-            <li key={r.id} className="rounded-lg border border-[#E2E8F0] bg-[#FAFAFA] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold text-[#2D3748]">{r.studentDisplayName || 'Student'}</span>
-                <span className="text-sm text-[#F59E0B]" aria-label={`${r.rating} of 5 stars`}>
-                  {'★'.repeat(r.rating)}
-                  <span className="text-[#E2E8F0]">{'★'.repeat(5 - r.rating)}</span>
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-relaxed text-[#4A5568]">{r.comment}</p>
-              {r.createdAt ? (
-                <p className="mt-2 text-xs text-[#A0AEC0]">{new Date(r.createdAt).toLocaleDateString()}</p>
-              ) : null}
-            </li>
+            <ReviewCard key={r.id} review={r} />
           ))}
         </ul>
       ) : null}
@@ -828,7 +823,9 @@ export default function StudentPropertyDetail({
             <span aria-hidden="true">📅 </span>
             Availability Calendar
           </h2>
-          <PropertyAvailabilityCalendar
+          <AvailabilityCalendar
+            propertyId={property?.id}
+            viewMode="student"
             status={property?.status}
             onDaySelect={handleCalendarPick}
             moveInYmd={moveIn}

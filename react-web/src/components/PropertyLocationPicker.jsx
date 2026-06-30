@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api'
 
+const PLACEHOLDER_KEYS = new Set(['', 'your_api_key_here', 'your-google-maps-api-key'])
+
+/** Vite inlines VITE_* at build time (Docker build-arg or .env.local / root .env). */
+function resolveGoogleMapsApiKey() {
+  const raw = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  const key = typeof raw === 'string' ? raw.trim() : ''
+  if (!key || PLACEHOLDER_KEYS.has(key)) return ''
+  return key
+}
+
 const defaultCenter = { lat: 5.33, lng: 103.1408 }
 const MAP_HEIGHT = 400
 
@@ -43,9 +53,18 @@ export default function PropertyLocationPicker({
   onLocationChange,
   className = '',
 }) {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
+  const apiKey = resolveGoogleMapsApiKey()
+
+  useEffect(() => {
+    if (!apiKey) {
+      console.error(
+        '[PropertyLocationPicker] Missing VITE_GOOGLE_MAPS_API_KEY. Dev: react-web/.env.local — Docker: root .env + docker compose build web',
+      )
+    }
+  }, [apiKey])
+
   const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: apiKey || '',
+    googleMapsApiKey: apiKey,
   })
 
   const mapRef = useRef(null)
@@ -148,7 +167,7 @@ export default function PropertyLocationPicker({
     }
   }, [latitude, longitude])
 
-  if (!apiKey || apiKey === 'your_api_key_here') {
+  if (!apiKey) {
     return (
       <div
         className={`rounded-xl border border-[#FDE68A] bg-[#FFFBEB] p-4 text-sm text-[#92400E] ${className}`}
@@ -156,10 +175,20 @@ export default function PropertyLocationPicker({
       >
         <p className="font-semibold text-[#B45309]">Google Maps API key required</p>
         <p className="mt-1">
-          Add <code className="rounded bg-white/80 px-1 py-0.5 text-xs">VITE_GOOGLE_MAPS_API_KEY</code> to{' '}
-          <code className="rounded bg-white/80 px-1 py-0.5 text-xs">react-web/.env.local</code> and restart the dev
-          server.
+          Set <code className="rounded bg-white/80 px-1 py-0.5 text-xs">VITE_GOOGLE_MAPS_API_KEY</code> then rebuild:
         </p>
+        <ul className="mt-2 list-inside list-disc space-y-1 text-xs">
+          <li>
+            <strong>Local dev:</strong>{' '}
+            <code className="rounded bg-white/80 px-1 py-0.5">react-web/.env.local</code> — restart{' '}
+            <code className="rounded bg-white/80 px-1 py-0.5">npm run dev</code>
+          </li>
+          <li>
+            <strong>Docker / VPS:</strong> repo root <code className="rounded bg-white/80 px-1 py-0.5">.env</code> —
+            run <code className="rounded bg-white/80 px-1 py-0.5">docker compose build web</code> (key is baked in at
+            build time)
+          </li>
+        </ul>
       </div>
     )
   }
@@ -170,7 +199,14 @@ export default function PropertyLocationPicker({
         className={`rounded-xl border border-[#FC8181]/40 bg-[#FFF5F5] p-4 text-sm text-[#C53030] ${className}`}
         role="alert"
       >
-        Unable to load Google Maps. Check your API key, enabled APIs (Maps JavaScript), and browser restrictions.
+        <p className="font-semibold">Unable to load Google Maps</p>
+        <p className="mt-1">
+          Check your API key, enable <strong>Maps JavaScript API</strong>, and allow your site URL in Google Cloud
+          restrictions.
+        </p>
+        <p className="mt-2 text-xs text-[#9B2C2C]">
+          Debug: open the browser console for &quot;[PropertyLocationPicker] Google Maps API key loaded&quot;.
+        </p>
       </div>
     )
   }

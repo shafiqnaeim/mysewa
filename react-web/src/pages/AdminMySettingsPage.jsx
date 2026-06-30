@@ -44,6 +44,8 @@ export default function AdminMySettingsPage() {
   const [mapSelectedId, setMapSelectedId] = useState(null)
   const [mapDraftLat, setMapDraftLat] = useState('')
   const [mapDraftLng, setMapDraftLng] = useState('')
+  const [mapDraftName, setMapDraftName] = useState('')
+  const [mapSearchQuery, setMapSearchQuery] = useState('')
   const [mapSaving, setMapSaving] = useState(false)
 
   const loadUniversities = useCallback(async () => {
@@ -168,6 +170,7 @@ export default function AdminMySettingsPage() {
         setMapSelectedId(null)
         setMapDraftLat('')
         setMapDraftLng('')
+        setMapDraftName('')
       }
       pushToast({ message: 'University deleted.', type: 'success' })
       await loadUniversities()
@@ -178,21 +181,31 @@ export default function AdminMySettingsPage() {
 
   function handleUniEditOnMap(u) {
     setActiveTab('campus-map')
-    setMapSelectedId(u.id)
-    setMapDraftLat(u.latitude != null ? String(u.latitude) : '')
-    setMapDraftLng(u.longitude != null ? String(u.longitude) : '')
+    handleMapSelect(u)
   }
 
   function handleMapSelect(u) {
     setMapSelectedId(u.id)
     setMapDraftLat(u.latitude != null ? String(u.latitude) : '')
     setMapDraftLng(u.longitude != null ? String(u.longitude) : '')
+    setMapDraftName(u.name || '')
   }
 
-  async function handleMapSaveCoords() {
+  function handleMapBlankClick(lat, lng) {
+    openUniCreate()
+    setUniDraftLat(String(lat))
+    setUniDraftLng(String(lng))
+    pushToast({ message: 'New university form opened — complete details and save.', type: 'info' })
+  }
+
+  async function handleMapSaveChanges() {
     if (!token || !mapSelectedId) return
     const campus = universities.find((u) => u.id === mapSelectedId)
     if (!campus) return
+    if (!mapDraftName.trim()) {
+      pushToast({ message: 'Campus name is required.', type: 'error' })
+      return
+    }
     if (!mapDraftLat || !mapDraftLng) {
       pushToast({ message: 'Set coordinates on the map first.', type: 'error' })
       return
@@ -201,7 +214,7 @@ export default function AdminMySettingsPage() {
     try {
       await updateUniversity(token, mapSelectedId, {
         code: campus.code,
-        name: campus.name,
+        name: mapDraftName.trim(),
         city: campus.city || null,
         state: campus.state || null,
         postcode: campus.postcode || null,
@@ -210,13 +223,18 @@ export default function AdminMySettingsPage() {
         latitude: Number(mapDraftLat),
         longitude: Number(mapDraftLng),
       })
-      pushToast({ message: 'Coordinates saved.', type: 'success' })
+      pushToast({ message: 'Campus saved.', type: 'success' })
       await loadUniversities()
     } catch (e) {
-      pushToast({ message: e.message || 'Could not save coordinates.', type: 'error' })
+      pushToast({ message: e.message || 'Could not save campus.', type: 'error' })
     } finally {
       setMapSaving(false)
     }
+  }
+
+  function handleMapDeleteSelected() {
+    const campus = universities.find((u) => u.id === mapSelectedId)
+    if (campus) void handleUniDelete(campus)
   }
 
   if (loading) {
@@ -256,6 +274,7 @@ export default function AdminMySettingsPage() {
         uniForm={uniForm}
         uniDraftLat={uniDraftLat}
         uniDraftLng={uniDraftLng}
+        uniSelectedId={uniSelectedId}
         uniSaving={uniSaving}
         onUniFormChange={(key, value) => setUniForm((prev) => ({ ...prev, [key]: value }))}
         onUniPinChange={(lat, lng) => {
@@ -269,14 +288,22 @@ export default function AdminMySettingsPage() {
         onUniDelete={handleUniDelete}
         onUniEditOnMap={handleUniEditOnMap}
         mapSelectedId={mapSelectedId}
+        mapSearchQuery={mapSearchQuery}
+        onMapSearchChange={setMapSearchQuery}
         onMapSelect={handleMapSelect}
-        onMapSaveCoords={handleMapSaveCoords}
+        onMapSaveChanges={handleMapSaveChanges}
+        onMapDeleteSelected={handleMapDeleteSelected}
+        onMapBlankClick={handleMapBlankClick}
+        mapDraftName={mapDraftName}
+        onMapDraftNameChange={setMapDraftName}
         mapDraftLat={mapDraftLat}
         mapDraftLng={mapDraftLng}
         onMapPinChange={(lat, lng) => {
           setMapDraftLat(String(lat))
           setMapDraftLng(String(lng))
         }}
+        onMapDraftLatChange={setMapDraftLat}
+        onMapDraftLngChange={setMapDraftLng}
         mapSaving={mapSaving}
       />
     </AdminLayout>

@@ -45,6 +45,15 @@ export const TRENDING_FALLBACK = [
     petFriendly: true,
     neighborhoodScore: 95,
   },
+  {
+    id: 'demo-6',
+    name: 'IPGM Campus Lodge',
+    location: 'Besut, Terengganu',
+    price: 420,
+    image: 'https://images.unsplash.com/photo-1505843513577-22bb7d21e455?auto=format&fit=crop&w=800&q=80',
+    petFriendly: false,
+    neighborhoodScore: 90,
+  },
 ]
 
 export const TESTIMONIALS = [

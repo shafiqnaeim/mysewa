@@ -1,5 +1,7 @@
 package com.mysewa.api.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
@@ -8,6 +10,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class MailService {
+
+    private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
 
@@ -21,8 +25,7 @@ public class MailService {
     public void sendEmail(String to, String subject, String body) {
         JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
         if (mailSender == null) {
-            // Local dev fallback when SMTP is not configured yet.
-            System.out.println("MAIL_DEBUG to=" + to + " subject=" + subject + " body=" + body);
+            log.warn("SMTP not configured — email not sent to {} (subject: {})", to, subject);
             return;
         }
         try {
@@ -33,9 +36,7 @@ public class MailService {
             message.setText(body);
             mailSender.send(message);
         } catch (Exception ex) {
-            // Keeps local development unblocked if SMTP credentials are missing/invalid.
-            System.out.println("MAIL_WARN Unable to send via SMTP: " + ex.getMessage());
-            System.out.println("MAIL_DEBUG to=" + to + " subject=" + subject + " body=" + body);
+            log.error("Unable to send email to {}: {}", to, ex.getMessage());
         }
     }
 }

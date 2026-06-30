@@ -127,6 +127,9 @@ export default function LandlordDashboard({ landlordName = 'Landlord', landlordI
         setBookings(data.bookings)
         setPayments(data.payments)
         setReviews(data.reviews)
+        if (data.partialError) {
+          setError(data.partialError)
+        }
       } catch (e) {
         if (!cancelled) {
           setError(e.message || 'Unable to load dashboard data.')

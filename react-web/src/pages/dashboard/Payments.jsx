@@ -74,7 +74,7 @@ export function computePaymentStats(payments) {
   return { totalReceived, pending, thisMonth }
 }
 
-export default function Payments({ payments = [], loading = false }) {
+export default function Payments({ payments = [], loading = false, onViewReceipt }) {
   const stats = useMemo(() => computePaymentStats(payments), [payments])
 
   const statValues = {
@@ -135,6 +135,7 @@ export default function Payments({ payments = [], loading = false }) {
                     <th className="px-6 py-3">Amount</th>
                     <th className="px-6 py-3">Type</th>
                     <th className="px-6 py-3">Status</th>
+                    <th className="px-6 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E8F0]">
@@ -151,6 +152,20 @@ export default function Payments({ payments = [], loading = false }) {
                       </td>
                       <td className="px-6 py-4">
                         <StatusBadge status={row.status} />
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        {row.receipt && String(row.status || '').toLowerCase() === 'paid' ? (
+                          <button
+                            type="button"
+                            onClick={() => onViewReceipt?.(row.receipt)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#E2E8F0] bg-white px-3 py-1.5 text-xs font-semibold text-[#2D3748] hover:bg-[#F7FAFC]"
+                          >
+                            <span aria-hidden="true">📄</span>
+                            View Receipt
+                          </button>
+                        ) : (
+                          <span className="text-xs text-[#A0AEC0]">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

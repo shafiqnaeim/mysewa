@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../../context/ToastContext'
 import {
   canViewLandlordPaymentDetails,
@@ -20,7 +20,10 @@ import {
   fetchProperty,
   fetchToyyibPayOptions,
   mapPropertyPaymentDetails,
+  uploadPaymentReceipt,
+  validatePaymentReceiptFile,
 } from '../../services/bookingService'
+import { resolveMediaUrl } from '../../utils/mediaUrl'
 
 const PAYMENT_METHODS = [
   {
@@ -155,6 +158,178 @@ function PaymentUnavailableNotice() {
   )
 }
 
+function PaymentReceiptUpload({
+  applicationId,
+  disabled,
+  onUploaded,
+}) {
+  const { pushToast } = useToast()
+  const fileInputRef = useRef(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [selectedFile, setSelectedFile] = useState(null)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const [uploadedUrl, setUploadedUrl] = useState(null)
+  const [uploading, setUploading] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrl)
+      }
+    }
+  }, [previewUrl])
+
+  function clearSelection() {
+    if (previewUrl?.startsWith('blob:')) {
+      URL.revokeObjectURL(previewUrl)
+    }
+    setSelectedFile(null)
+    setPreviewUrl(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function handleFilePicked(file) {
+    const error = validatePaymentReceiptFile(file)
+    if (error) {
+      pushToast({ message: error, type: 'error' })
+      return
+    }
+    clearSelection()
+    setSelectedFile(file)
+    setUploadedUrl(null)
+    if (file.type.startsWith('image/')) {
+      setPreviewUrl(URL.createObjectURL(file))
+    } else {
+      setPreviewUrl(null)
+    }
+  }
+
+  function onInputChange(e) {
+    const file = e.target.files?.[0]
+    if (file) handleFilePicked(file)
+    e.target.value = ''
+  }
+
+  function onDrop(e) {
+    e.preventDefault()
+    setDragOver(false)
+    if (disabled) return
+    const file = e.dataTransfer.files?.[0]
+    if (file) handleFilePicked(file)
+  }
+
+  async function handleUpload() {
+    const token = localStorage.getItem('mysewa_token')
+    if (!token || !applicationId || !selectedFile) {
+      pushToast({ message: 'Choose a receipt file first.', type: 'info' })
+      return
+    }
+    setUploading(true)
+    try {
+      const url = await uploadPaymentReceipt(applicationId, selectedFile, token)
+      setUploadedUrl(url)
+      onUploaded?.(url)
+      pushToast({ message: 'Receipt uploaded.', type: 'success' })
+    } catch (e) {
+      pushToast({ message: e.message || 'Upload failed.', type: 'error' })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const displayName = selectedFile?.name || (uploadedUrl ? uploadedUrl.split('/').pop() : null)
+
+  return (
+    <div className="mt-4 rounded-lg border border-[#E2E8F0] bg-white p-4">
+      <p className="text-sm font-semibold text-[#2D3748]">
+        <span aria-hidden="true">📤 </span>
+        Upload Payment Receipt (Optional)
+      </p>
+
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          if (!disabled) setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => !disabled && fileInputRef.current?.click()}
+        className={`mt-3 flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed px-4 py-8 text-center transition ${
+          dragOver
+            ? 'border-[#E88D5B] bg-[#FFFAF0]'
+            : 'border-[#E2E8F0] bg-[#F7FAFC] hover:border-[#E88D5B]/60'
+        } ${disabled ? 'cursor-not-allowed opacity-60' : ''}`}
+      >
+        <p className="text-sm font-medium text-[#4A5568]">Drag &amp; drop or click to upload</p>
+        <p className="mt-1 text-xs text-[#A0AEC0]">JPG, PNG, PDF (max 5MB)</p>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        className="hidden"
+        disabled={disabled || uploading}
+        onChange={onInputChange}
+      />
+
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt="Receipt preview"
+          className="mt-3 h-24 w-auto max-w-full rounded-lg border border-[#E2E8F0] object-contain"
+        />
+      ) : null}
+
+      {displayName ? (
+        <p className="mt-3 text-sm text-[#4A5568]">
+          <span aria-hidden="true">📎 </span>
+          <span className="font-medium text-[#2D3748]">{displayName}</span>
+          {uploadedUrl ? (
+            <span className="ml-2 text-xs font-semibold text-green-600">Uploaded</span>
+          ) : null}
+        </p>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={disabled || uploading || !selectedFile || Boolean(uploadedUrl)}
+          onClick={handleUpload}
+          className="inline-flex items-center justify-center rounded-lg bg-[#E88D5B] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#d97a48] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {uploading ? 'Uploading…' : 'Upload'}
+        </button>
+        {selectedFile && !uploading ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={clearSelection}
+            className="rounded-lg border border-[#E2E8F0] bg-white px-4 py-2 text-sm font-medium text-[#4A5568] transition hover:bg-[#F7FAFC]"
+          >
+            Clear
+          </button>
+        ) : null}
+        {uploadedUrl ? (
+          <a
+            href={resolveMediaUrl(uploadedUrl)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center rounded-lg border border-[#E2E8F0] px-4 py-2 text-sm font-medium text-[#E88D5B] transition hover:bg-[#FFFAF0]"
+          >
+            Preview receipt
+          </a>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function PayDepositModal({ application, onClose, onCompleted, onSuccessDone }) {
   const { pushToast } = useToast()
   const [instructions, setInstructions] = useState(null)
@@ -164,6 +339,7 @@ export default function PayDepositModal({ application, onClose, onCompleted, onS
   const [busy, setBusy] = useState(false)
   const [selectedMethod, setSelectedMethod] = useState('bank_transfer')
   const [phase, setPhase] = useState('form')
+  const [receiptUrl, setReceiptUrl] = useState(null)
 
   const amount = resolvedStudentDepositAmount(application)
   const amountLabel = formatDepositAmount(amount)
@@ -302,6 +478,10 @@ export default function PayDepositModal({ application, onClose, onCompleted, onS
     }
   }, [availableMethods, selectedMethod])
 
+  useEffect(() => {
+    setReceiptUrl(null)
+  }, [application?.id, selectedMethod])
+
   async function confirmManual(channel) {
     const token = localStorage.getItem('mysewa_token')
     if (!token || !application?.id) return
@@ -313,7 +493,7 @@ export default function PayDepositModal({ application, onClose, onCompleted, onS
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ channel }),
+        body: JSON.stringify({ channel, receiptUrl: receiptUrl || undefined }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || `Could not record (${res.status})`)
@@ -573,33 +753,22 @@ export default function PayDepositModal({ application, onClose, onCompleted, onS
                         Transfer <strong className="font-bold text-[#2D3748]">{amountLabel}</strong> using the QR code
                         below.
                       </p>
-                      <div className="mt-3 flex justify-center">
+                      <div className="mt-3 flex justify-center rounded-lg border border-[#E2E8F0] bg-white p-4">
                         <img
                           src={qrImageUrl}
                           alt="DuitNow payment QR code"
-                          className="h-40 w-40 rounded-lg border border-[#E2E8F0] bg-white object-contain p-2"
+                          className="h-48 w-48 max-w-full object-contain"
                         />
                       </div>
+                      <PaymentReceiptUpload
+                        applicationId={application?.id}
+                        disabled={busy}
+                        onUploaded={setReceiptUrl}
+                      />
                     </>
                   ) : (
                     <PaymentUnavailableNotice />
                   )}
-                  {bankDetailsReady ? (
-                    <div className="mt-4 border-t border-gray-200 pt-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Or pay via bank</p>
-                      <p className="mt-2 text-sm text-gray-600">
-                        <span className="font-semibold text-[#2D3748]">{instructions.bankName}</span>
-                        {' · '}
-                        <span className="font-mono font-bold text-[#2D3748]">{instructions.bankAccount}</span>
-                        {instructions.landlordName ? (
-                          <>
-                            {' '}
-                            · <span className="font-semibold text-[#2D3748]">{instructions.landlordName}</span>
-                          </>
-                        ) : null}
-                      </p>
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
 

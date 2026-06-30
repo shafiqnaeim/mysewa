@@ -12,6 +12,7 @@ import com.mysewa.api.repo.FinancialTransactionRepository;
 import com.mysewa.api.repo.PropertyRepository;
 import com.mysewa.api.repo.UserAccountRepository;
 import com.mysewa.api.service.AuthService;
+import com.mysewa.api.service.BookingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
@@ -51,6 +52,7 @@ public class PaymentController {
     private final ApplicationRepository applicationRepository;
     private final PropertyRepository propertyRepository;
     private final UserAccountRepository userAccountRepository;
+    private final BookingService bookingService;
 
     public PaymentController(
             PaymentProperties paymentProperties,
@@ -59,7 +61,8 @@ public class PaymentController {
             AuthService authService,
             ApplicationRepository applicationRepository,
             PropertyRepository propertyRepository,
-            UserAccountRepository userAccountRepository
+            UserAccountRepository userAccountRepository,
+            BookingService bookingService
     ) {
         this.paymentProperties = paymentProperties;
         this.financialTransactionRepository = financialTransactionRepository;
@@ -68,6 +71,7 @@ public class PaymentController {
         this.applicationRepository = applicationRepository;
         this.propertyRepository = propertyRepository;
         this.userAccountRepository = userAccountRepository;
+        this.bookingService = bookingService;
     }
 
     @GetMapping("/manual-instructions")
@@ -155,6 +159,11 @@ public class PaymentController {
         }
         tx.setStatus("completed");
         financialTransactionRepository.save(tx);
+        if (DepositType.COMPLETED_DEPOSIT_TYPES.contains(tx.getType())) {
+            applicationRepository.findById(tx.getApplicationId()).ifPresent(app ->
+                    propertyRepository.findById(app.getPropertyId()).ifPresent(property ->
+                            bookingService.onDepositConfirmed(app, property)));
+        }
         return ResponseEntity.ok("OK");
     }
 
