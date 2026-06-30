@@ -16,16 +16,7 @@ const LS_PREFS = (id) => `mysewa_student_prefs_${id}`
 
 const COUNTRIES = ['Malaysia', 'Singapore', 'Indonesia', 'Brunei', 'Thailand', 'Bangladesh', 'India', 'Other']
 
-const ACADEMIC_YEAR_OPTIONS = [
-  'Year 1',
-  'Year 2',
-  'Year 3',
-  'Year 4',
-  'Year 5',
-  'Year 6',
-  'Year 7',
-  'Year 8',
-]
+const ACADEMIC_YEAR_OPTIONS = ['Year 1', 'Year 2', 'Year 3', 'Year 4']
 
 const VERIFICATION_STATE_LABEL = {
   pending: 'Pending',

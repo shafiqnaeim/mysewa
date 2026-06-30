@@ -5,46 +5,7 @@ import LoadingSkeleton from '../components/errors/LoadingSkeleton'
 import NetworkError from '../components/errors/NetworkError'
 import { PrimaryButton, OutlineButton } from '../components/errors/PropertyNotFound'
 import { useToast } from '../context/ToastContext'
-import { TRENDING_FALLBACK } from '../components/landing/landingData'
 import StudentPropertyDetail from './dashboard/StudentPropertyDetail'
-import { DUMMY_PROPERTIES } from './dashboard/StudentPropertySearch'
-
-const DEMO_DETAIL_BY_ID = Object.fromEntries(
-  DUMMY_PROPERTIES.map((p, index) => [
-    String(p.id),
-    {
-      id: p.id,
-      name: p.name,
-      price: p.price,
-      type: p.type,
-      status: 'available',
-      capacity: p.bedrooms >= 4 ? 10 : p.bedrooms * 3,
-      bedrooms: p.bedrooms,
-      city: p.shortAddress,
-      state: 'Terengganu',
-      location: p.address,
-      description: `Comfortable ${p.type} near campus — ideal for students. Includes essential amenities and easy access to public transport.`,
-      gender: 'any',
-      religion: 'any',
-      race: 'any',
-      verified: p.verified,
-      rentalStyle: p.studentApproved ? 'student' : 'general',
-      amenities: p.amenities,
-      images: JSON.stringify([p.image]),
-      rentalStyle: JSON.stringify({ deposit: 1500 }),
-      latitude: 5.33 + index * 0.01,
-      longitude: 103.14 + index * 0.01,
-      averageRating: p.rating,
-      reviewCount: p.reviewCount,
-    },
-  ]),
-)
-
-function enrichDemoFromApi(item, demoId) {
-  const demo = DEMO_DETAIL_BY_ID[demoId]
-  if (!demo) return item
-  return { ...demo, ...item, id: demo.id }
-}
 
 export default function StudentPropertyDetailPage() {
   const { id } = useParams()
@@ -60,21 +21,14 @@ export default function StudentPropertyDetailPage() {
 
   const numericId = Number(id)
   const isNumericId = Number.isFinite(numericId) && numericId > 0
-  const demoFallback = DEMO_DETAIL_BY_ID[String(id)]
 
   const loadProperty = useCallback(async () => {
-    if (!id) {
+    if (!id || !isNumericId) {
       setPageState('not_found')
       return
     }
 
     setPageState('loading')
-
-    if (!isNumericId && demoFallback) {
-      setProperty(demoFallback)
-      setPageState('ready')
-      return
-    }
 
     const token = localStorage.getItem('mysewa_token')
     let res
@@ -83,11 +37,6 @@ export default function StudentPropertyDetailPage() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       })
     } catch {
-      if (demoFallback) {
-        setProperty(demoFallback)
-        setPageState('ready')
-        return
-      }
       setPageState('network')
       return
     }
@@ -95,53 +44,24 @@ export default function StudentPropertyDetailPage() {
     const data = await res.json().catch(() => ({}))
 
     if (res.status === 404) {
-      if (demoFallback) {
-        setProperty(demoFallback)
-        setPageState('ready')
-        return
-      }
       setPageState('not_found')
       return
     }
 
     if (!res.ok) {
-      if (demoFallback) {
-        setProperty(demoFallback)
-        setPageState('ready')
-        return
-      }
       setPageState('network')
       return
     }
 
-    let item = data.item
-    if (!item && demoFallback) {
-      item = demoFallback
-    }
+    const item = data.item
     if (!item) {
       setPageState('not_found')
       return
     }
 
-    if (!item.images && demoFallback?.images) {
-      item = enrichDemoFromApi(item, String(id))
-    }
-
-    if (!listPropertyHasImages(item) && TRENDING_FALLBACK.length) {
-      const thumb = TRENDING_FALLBACK[(numericId || 0) % TRENDING_FALLBACK.length].image
-      item = { ...item, images: JSON.stringify([thumb]) }
-    }
-
     setProperty(item)
     setPageState('ready')
-  }, [id, isNumericId, demoFallback])
-
-  function listPropertyHasImages(item) {
-    const raw = item?.images
-    if (!raw) return Boolean(item?.thumbnailPath || item?.coverImageUrl)
-    if (Array.isArray(raw)) return raw.length > 0
-    return String(raw).trim().length > 2
-  }
+  }, [id, isNumericId])
 
   useEffect(() => {
     loadProperty()
@@ -187,13 +107,9 @@ export default function StudentPropertyDetailPage() {
       return
     }
 
-    const propertyId = isNumericId ? numericId : property?.id
-    if (!propertyId || (typeof propertyId === 'string' && propertyId.startsWith('demo-'))) {
-      pushToast({
-        message: 'This is a demo listing — sign in and browse live properties to apply.',
-        type: 'info',
-        duration: 7000,
-      })
+    const propertyId = numericId
+    if (!propertyId) {
+      setPageState('not_found')
       return
     }
 

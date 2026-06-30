@@ -22,119 +22,6 @@ const INPUT_CLASS =
   'mt-1.5 w-full rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#2D3748] outline-none transition placeholder:text-[#A0AEC0] focus:border-[#E88D5B] focus:ring-2 focus:ring-[#E88D5B]/20'
 
 const LABEL_CLASS = 'block text-xs font-medium text-[#4A5568]'
-export const DUMMY_PROPERTIES = [
-  {
-    id: 'demo-casa',
-    name: 'Casa Apartment',
-    price: 1500,
-    address: 'Jalan Universiti, Section 12',
-    location: 'Gong Badak, Kuala Terengganu',
-    shortAddress: 'Kuala Terengganu',
-    distanceMins: 5,
-    rating: 4.8,
-    reviewCount: 12,
-    type: 'apartment',
-    capacity: 4,
-    status: 'available',
-    campus: 'UMT',
-    gender: 'mixed',
-    religion: 'islam',
-    race: 'malay',
-    amenities: ['wifi', 'furnished', 'parking'],
-    image: 'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 'demo-studio',
-    name: 'Studio Room',
-    price: 800,
-    address: 'Kampung Gong Badak, Kuala Nerus',
-    location: 'Kuala Nerus',
-    shortAddress: 'Kuala Nerus',
-    distanceMins: 10,
-    rating: 4.5,
-    reviewCount: 6,
-    type: 'studio',
-    capacity: 1,
-    status: 'available',
-    campus: 'UMT',
-    gender: 'female',
-    religion: 'islam',
-    race: 'chinese',
-    amenities: ['wifi', 'furnished', 'aircond'],
-    image: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 'demo-green',
-    name: 'Green Villa',
-    price: 2000,
-    address: 'Jalan Sultan Mahmud, Kuala Terengganu',
-    location: 'Kuala Terengganu',
-    shortAddress: 'Kuala Terengganu',
-    distanceMins: 3,
-    rating: 5.0,
-    reviewCount: 24,
-    type: 'house',
-    capacity: 8,
-    status: 'rented',
-    campus: 'UniSZA',
-    gender: 'male',
-    religion: 'buddhism',
-    race: 'indian',
-    amenities: ['wifi', 'parking', 'aircond'],
-    image: 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 'demo-sunset',
-    name: 'Sunset Apartment',
-    price: 1200,
-    address: 'Persiaran UMT, Gong Badak',
-    location: 'Gong Badak',
-    shortAddress: 'Gong Badak',
-    distanceMins: 8,
-    rating: 4.2,
-    reviewCount: 3,
-    type: 'apartment',
-    capacity: 3,
-    status: 'available',
-    campus: 'UMT',
-    amenities: ['wifi', 'parking', 'washing'],
-    image: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 'demo-blue',
-    name: 'Blue House',
-    price: 900,
-    address: 'Lorong Batu Buruk, Kuala Terengganu',
-    location: 'Kuala Terengganu',
-    shortAddress: 'Kuala Terengganu',
-    distanceMins: 15,
-    rating: 4.0,
-    reviewCount: 0,
-    type: 'house',
-    capacity: 6,
-    status: 'available',
-    campus: 'IPGM',
-    amenities: ['wifi', 'kitchen', 'fridge'],
-    image: 'https://images.unsplash.com/photo-1560185127-6ed189bf02f4?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    id: 'demo-garden',
-    name: 'Garden Home',
-    price: 1800,
-    address: 'Taman Universiti, Kuala Nerus',
-    location: 'Kuala Nerus',
-    shortAddress: 'Kuala Nerus',
-    distanceMins: 6,
-    rating: 4.7,
-    reviewCount: 9,
-    type: 'house',
-    capacity: 5,
-    status: 'available',
-    campus: 'ILPKT',
-    amenities: ['wifi', 'parking', 'furnished'],
-    image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
-  },
-]
 
 export { PAGE_SIZE }
 
@@ -171,12 +58,18 @@ function StudentPropertyCard({ property, saved, onViewDetails, onToggleSave }) {
   return (
     <article className="group flex h-full flex-col overflow-hidden rounded-xl bg-white shadow-sm transition hover:shadow-md">
       <div className="relative overflow-hidden">
-        <img
-          src={property.image}
-          alt=""
-          className="h-48 w-full rounded-t-xl object-cover transition duration-300 group-hover:scale-[1.02]"
-          loading="lazy"
-        />
+        {property.image ? (
+          <img
+            src={property.image}
+            alt=""
+            className="h-48 w-full rounded-t-xl object-cover transition duration-300 group-hover:scale-[1.02]"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-48 w-full items-center justify-center rounded-t-xl bg-[#EDF2F7] text-sm text-[#A0AEC0]">
+            No photo
+          </div>
+        )}
         <span
           className={`absolute right-3 top-3 rounded-md px-2.5 py-1 text-[10px] font-bold tracking-wide shadow-sm ${badge.className}`}
         >
@@ -210,7 +103,7 @@ function StudentPropertyCard({ property, saved, onViewDetails, onToggleSave }) {
 
         <p className="mt-1 text-sm text-[#4A5568]">
           <span aria-hidden="true">🚶 </span>
-          {property.distanceMins} mins to campus
+          {property.distanceLabel || 'Distance not listed'}
         </p>
 
         <p className="mt-1 text-sm text-[#4A5568]">
@@ -510,7 +403,7 @@ export default function StudentPropertySearch({
 
         {error ? (
           <div
-            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
             role="alert"
           >
             {error}

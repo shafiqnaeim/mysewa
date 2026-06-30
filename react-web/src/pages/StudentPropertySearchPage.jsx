@@ -9,11 +9,9 @@ import {
 } from '../utils/propertyDisplay'
 import { readSavedProperties, toggleSavedProperty } from '../utils/savedProperties'
 import StudentPropertySearch, {
-  DUMMY_PROPERTIES,
   EMPTY_FILTERS,
   PAGE_SIZE,
 } from './dashboard/StudentPropertySearch'
-import { TRENDING_FALLBACK } from '../components/landing/landingData'
 
 function normalizeType(type) {
   const t = String(type || '').toLowerCase()
@@ -24,23 +22,15 @@ function normalizeType(type) {
   return t
 }
 
-function parseDistanceMins(item, index) {
+function formatDistanceLabel(item) {
   const dist = String(item.distance || '').trim()
-  const minMatch = dist.match(/(\d+)\s*min/i)
-  if (minMatch) return Number(minMatch[1])
-  const kmMatch = dist.match(/(\d+(?:\.\d+)?)\s*km/i)
-  if (kmMatch) return Math.max(1, Math.round(Number(kmMatch[1]) * 12))
-  return 3 + ((Number(item.id) || index * 3) % 13)
+  if (dist) return dist
+  return null
 }
 
-function mapApiToCard(item, index) {
+function mapApiToCard(item) {
   const imageUrls = listPropertyImageUrls(item)
-  const image =
-    imageUrls[0] ||
-    item.coverImageUrl ||
-    item.imageUrl ||
-    item.thumbnailUrl ||
-    TRENDING_FALLBACK[index % TRENDING_FALLBACK.length].image
+  const image = imageUrls[0] || null
 
   const location = formatPropertyLocationLine(item)
   const address = [item.location, item.city, item.state].filter(Boolean).join(', ') || location
@@ -58,7 +48,7 @@ function mapApiToCard(item, index) {
     address,
     location,
     shortAddress: item.city || item.state || location,
-    distanceMins: parseDistanceMins(item, index),
+    distanceLabel: formatDistanceLabel(item),
     rating,
     reviewCount,
     type: normalizeType(item.type),
@@ -141,7 +131,7 @@ export default function StudentPropertySearchPage() {
   const [userId, setUserId] = useState(null)
   const [savedRevision, setSavedRevision] = useState(0)
 
-  const [allProperties, setAllProperties] = useState(DUMMY_PROPERTIES)
+  const [allProperties, setAllProperties] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [draftFilters, setDraftFilters] = useState(EMPTY_FILTERS)
@@ -154,21 +144,17 @@ export default function StudentPropertySearchPage() {
       setLoading(true)
       setError('')
       try {
-        const res = await fetch('/api/v1/properties/search')
+        const res = await fetch('/api/properties?size=100')
         if (!res.ok) throw new Error(`Failed to load properties (HTTP ${res.status})`)
         const data = await res.json()
         const items = Array.isArray(data.items) ? data.items : []
         if (!cancelled) {
-          if (items.length > 0) {
-            setAllProperties(items.map(mapApiToCard))
-          } else {
-            setAllProperties(DUMMY_PROPERTIES)
-          }
+          setAllProperties(items.map(mapApiToCard))
         }
       } catch (e) {
         if (!cancelled) {
-          setAllProperties(DUMMY_PROPERTIES)
-          setError(e.message || 'Unable to load live properties — showing demo listings.')
+          setAllProperties([])
+          setError(e.message || 'Unable to load properties. Please try again later.')
         }
       } finally {
         if (!cancelled) setLoading(false)

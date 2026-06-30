@@ -67,7 +67,7 @@ services:
       # If "npm ci" fails with ECONNRESET: build React on host, set WEB_DOCKERFILE=Dockerfile.prebuilt in .env
       dockerfile: ${WEB_DOCKERFILE:-Dockerfile}
       args:
-        # Required for Google Maps on Add Property — set in repo root .env, then: docker compose build web
+        # From repo root .env at build time; fallback: react-web/.env.production inside Dockerfile
         VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
     container_name: mysewa-web
     restart: unless-stopped
